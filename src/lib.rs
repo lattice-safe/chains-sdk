@@ -1,0 +1,33 @@
+//! # trad-signer
+//!
+//! Unified, secure multi-chain signing library for ECDSA, EdDSA, BLS, and Schnorr.
+//!
+//! Each blockchain module is feature-gated so consumers only compile what they need.
+
+#![forbid(unsafe_code)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![warn(missing_docs)]
+
+pub mod error;
+pub mod traits;
+
+#[cfg(feature = "serde")]
+pub(crate) mod serde_zeroizing;
+
+#[cfg(feature = "ethereum")]
+pub mod ethereum;
+
+#[cfg(feature = "bitcoin")]
+pub mod bitcoin;
+
+#[cfg(feature = "neo")]
+pub mod neo;
+
+#[cfg(feature = "xrp")]
+pub mod xrp;
+
+#[cfg(feature = "solana")]
+pub mod solana;
+
+#[cfg(feature = "bls")]
+pub mod bls;

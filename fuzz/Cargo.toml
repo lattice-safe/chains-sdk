@@ -1,0 +1,37 @@
+[package]
+name = "trad-signer-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+trad-signer = { path = "..", features = [
+    "ethereum",
+    "bitcoin",
+    "solana",
+    "bls",
+] }
+
+[[bin]]
+name = "fuzz_ethereum"
+path = "fuzz_targets/fuzz_ethereum.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_bitcoin"
+path = "fuzz_targets/fuzz_bitcoin.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_ed25519"
+path = "fuzz_targets/fuzz_ed25519.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_bls"
+path = "fuzz_targets/fuzz_bls.rs"
+doc = false

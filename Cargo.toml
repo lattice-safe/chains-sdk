@@ -1,0 +1,65 @@
+[package]
+name = "trad-signer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "Unified, secure multi-chain signing library for ECDSA, EdDSA, BLS, and Schnorr"
+repository = "https://github.com/lattice-safe/trad-signer"
+keywords = ["crypto", "blockchain", "signing", "ecdsa", "bls"]
+categories = ["cryptography"]
+
+[features]
+default = ["std", "ethereum", "bitcoin", "solana", "xrp", "neo", "bls"]
+std = []
+serde = ["dep:serde", "k256/serde", "p256/serde"]
+ethereum = ["dep:k256", "dep:sha3"]
+bitcoin = ["dep:k256", "dep:sha2"]
+solana = ["dep:ed25519-dalek", "dep:rand_core"]
+xrp = [
+    "dep:k256",
+    "dep:ed25519-dalek",
+    "dep:sha2",
+    "dep:ripemd",
+    "dep:rand_core",
+]
+neo = ["dep:p256", "dep:sha2"]
+bls = ["dep:blst"]
+
+[dependencies]
+# ECDSA curves
+k256 = { version = "0.13", features = [
+    "ecdsa",
+    "ecdsa-core",
+    "sha256",
+    "schnorr",
+], optional = true }
+p256 = { version = "0.13", features = ["ecdsa"], optional = true }
+
+# EdDSA
+ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
+
+# BLS
+blst = { version = "0.3", optional = true }
+
+# Hash functions
+sha2 = { version = "0.10", optional = true }
+sha3 = { version = "0.10", optional = true }
+ripemd = { version = "0.1", optional = true }
+
+# Security
+subtle = "2.6"
+zeroize = { version = "1.8", features = ["derive"] }
+getrandom = "0.2"
+
+# Entropy
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
+
+# Error handling
+thiserror = "2.0"
+
+# Serialization (optional)
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[dev-dependencies]
+hex = "0.4"
