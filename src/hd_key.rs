@@ -80,6 +80,8 @@ impl ExtendedPrivateKey {
     ///
     /// If `hardened` is true, uses hardened derivation (index + 0x80000000).
     pub fn derive_child(&self, index: u32, hardened: bool) -> Result<Self, SignerError> {
+        use zeroize::Zeroize;
+
         let mut mac = HmacSha512::new_from_slice(&self.chain_code)
             .map_err(|_| SignerError::InvalidPrivateKey("HMAC init failed".into()))?;
 
@@ -103,33 +105,46 @@ impl ExtendedPrivateKey {
         }
 
         mac.update(&effective_index.to_be_bytes());
-        let result = mac.finalize().into_bytes();
+        let mut result = mac.finalize().into_bytes();
 
         let mut il = [0u8; 32];
         il.copy_from_slice(&result[..32]);
         let mut child_chain = [0u8; 32];
         child_chain.copy_from_slice(&result[32..]);
 
+        // Zeroize the full HMAC output immediately — il and child_chain are copies
+        for b in result.iter_mut() {
+            b.zeroize();
+        }
+
         // child_key = (il + parent_key) mod n
-        let parent_scalar = k256::NonZeroScalar::try_from(&*self.key as &[u8])
-            .map_err(|_| SignerError::InvalidPrivateKey("parent key invalid".into()))?;
-        let il_scalar = k256::NonZeroScalar::try_from(&il as &[u8])
-            .map_err(|_| SignerError::InvalidPrivateKey("derived key is zero".into()))?;
+        let derive_result = (|| -> Result<Zeroizing<[u8; 32]>, SignerError> {
+            let parent_scalar = k256::NonZeroScalar::try_from(&*self.key as &[u8])
+                .map_err(|_| SignerError::InvalidPrivateKey("parent key invalid".into()))?;
+            let il_scalar = k256::NonZeroScalar::try_from(&il as &[u8])
+                .map_err(|_| SignerError::InvalidPrivateKey("derived key is zero".into()))?;
 
-        // Add scalars: parent + il mod n
-        let child_scalar = parent_scalar.as_ref() + il_scalar.as_ref();
+            // Add scalars: parent + il mod n
+            let child_scalar = parent_scalar.as_ref() + il_scalar.as_ref();
 
-        // Validate the child scalar is non-zero (CtOption -> Option)
-        let child_nz: Option<k256::NonZeroScalar> =
-            k256::NonZeroScalar::new(child_scalar).into();
-        let child_secret = k256::SecretKey::from(
-            child_nz.ok_or_else(|| {
-                SignerError::InvalidPrivateKey("child key is zero".into())
-            })?,
-        );
+            // Validate the child scalar is non-zero (CtOption -> Option)
+            let child_nz: Option<k256::NonZeroScalar> =
+                k256::NonZeroScalar::new(child_scalar).into();
+            let child_secret = k256::SecretKey::from(
+                child_nz.ok_or_else(|| {
+                    SignerError::InvalidPrivateKey("child key is zero".into())
+                })?,
+            );
 
-        let mut child_key = Zeroizing::new([0u8; 32]);
-        child_key.copy_from_slice(&child_secret.to_bytes());
+            let mut child_key = Zeroizing::new([0u8; 32]);
+            child_key.copy_from_slice(&child_secret.to_bytes());
+            Ok(child_key)
+        })();
+
+        // Always zeroize il regardless of success/failure
+        il.zeroize();
+
+        let child_key = derive_result?;
 
         Ok(Self {
             key: child_key,
