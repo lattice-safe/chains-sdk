@@ -1,31 +1,18 @@
 //! MuSig2 key aggregation and signing (BIP-327).
 
+use crate::crypto;
 use crate::error::SignerError;
 use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, ProjectivePoint, Scalar};
-use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-// ─── Tagged Hashes (BIP-340 style) ──────────────────────────────────
-
-/// BIP-340 tagged hash: SHA256(SHA256(tag) || SHA256(tag) || data).
-fn tagged_hash(tag: &[u8], data: &[u8]) -> [u8; 32] {
-    let tag_hash = Sha256::digest(tag);
-    let mut h = Sha256::new();
-    h.update(tag_hash);
-    h.update(tag_hash);
-    h.update(data);
-    let result = h.finalize();
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&result);
-    out
-}
+// ─── Tagged Hash Scalar ─────────────────────────────────────────────
 
 /// Hash to scalar using tagged hash.
 fn tagged_hash_scalar(tag: &[u8], data: &[u8]) -> Scalar {
-    let hash = tagged_hash(tag, data);
+    let hash = crypto::tagged_hash(tag, data);
     let wide = k256::U256::from_be_slice(&hash);
     <Scalar as Reduce<k256::U256>>::reduce(wide)
 }
@@ -149,7 +136,7 @@ fn hash_keys(pubkeys: &[[u8; 33]]) -> [u8; 32] {
     for pk in pubkeys {
         data.extend_from_slice(pk);
     }
-    tagged_hash(b"KeyAgg list", &data)
+    crypto::tagged_hash(b"KeyAgg list", &data)
 }
 
 /// Key aggregation: combine N public keys into a single aggregate key (BIP-327).
@@ -243,7 +230,7 @@ pub fn nonce_gen(
         data.push(0x01); // nonce index
         data.extend_from_slice(msg);
         data.extend_from_slice(extra_in);
-        let hash = tagged_hash(b"MuSig/nonce", &data);
+        let hash = crypto::tagged_hash(b"MuSig/nonce", &data);
         let wide = k256::U256::from_be_slice(&hash);
         let s = <Scalar as Reduce<k256::U256>>::reduce(wide);
         if s == Scalar::ZERO {
@@ -261,7 +248,7 @@ pub fn nonce_gen(
         data.push(0x02); // nonce index
         data.extend_from_slice(msg);
         data.extend_from_slice(extra_in);
-        let hash = tagged_hash(b"MuSig/nonce", &data);
+        let hash = crypto::tagged_hash(b"MuSig/nonce", &data);
         let wide = k256::U256::from_be_slice(&hash);
         let s = <Scalar as Reduce<k256::U256>>::reduce(wide);
         if s == Scalar::ZERO {
