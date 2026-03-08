@@ -202,6 +202,13 @@ impl Transaction {
 pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::SignerError> {
     use crate::error::SignerError;
 
+    /// Convert u64 to usize, rejecting overflow on 32-bit platforms.
+    fn safe_usize(val: u64) -> Result<usize, SignerError> {
+        usize::try_from(val).map_err(|_| SignerError::ParseError(
+            format!("compact size {val} exceeds platform usize")
+        ))
+    }
+
     let mut off;
 
     // version (4 bytes LE)
@@ -212,7 +219,7 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
     off = 4;
 
     // input count
-    let input_count = encoding::read_compact_size(data, &mut off)? as usize;
+    let input_count = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
 
     let mut inputs = Vec::with_capacity(input_count);
     for _ in 0..input_count {
@@ -225,7 +232,7 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         let vout = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
         off += 4;
 
-        let script_len = encoding::read_compact_size(data, &mut off)? as usize;
+        let script_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
         if off + script_len > data.len() {
             return Err(SignerError::ParseError("tx truncated in scriptSig".into()));
         }
@@ -246,7 +253,7 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
     }
 
     // output count
-    let output_count = encoding::read_compact_size(data, &mut off)? as usize;
+    let output_count = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
 
     let mut outputs = Vec::with_capacity(output_count);
     for _ in 0..output_count {
@@ -258,7 +265,7 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         let value = u64::from_le_bytes(val_bytes);
         off += 8;
 
-        let spk_len = encoding::read_compact_size(data, &mut off)? as usize;
+        let spk_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
         if off + spk_len > data.len() {
             return Err(SignerError::ParseError("tx truncated in scriptPubKey".into()));
         }
@@ -273,6 +280,14 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         return Err(SignerError::ParseError("tx truncated in locktime".into()));
     }
     let locktime = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+    off += 4;
+
+    // Strict parsing: reject trailing bytes
+    if off != data.len() {
+        return Err(SignerError::ParseError(format!(
+            "tx has {} trailing bytes after locktime", data.len() - off
+        )));
+    }
 
     Ok(Transaction {
         version,

@@ -237,6 +237,14 @@ impl Psbt {
         let mut pubkey_hash = [0u8; 20];
         pubkey_hash.copy_from_slice(&script_pk[2..22]);
 
+        // Verify the signer's pubkey matches this input
+        let expected_hash = crate::crypto::hash160(&signer.public_key_bytes());
+        if pubkey_hash != expected_hash {
+            return Err(SignerError::SigningFailed(
+                "signer public key does not match the P2WPKH input".into()
+            ));
+        }
+
         // Get the unsigned transaction
         let tx_bytes = self.unsigned_tx()
             .ok_or_else(|| SignerError::SigningFailed("missing unsigned tx".into()))?

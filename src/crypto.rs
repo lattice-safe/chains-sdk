@@ -9,7 +9,21 @@ use sha2::{Digest, Sha256};
 ///
 /// Used by BIP-340 Schnorr, BIP-341 Taproot, BIP-322 message signing, and MuSig2.
 pub fn tagged_hash(tag: &[u8], data: &[u8]) -> [u8; 32] {
-    let tag_hash = Sha256::digest(tag);
+    // Fast path: use precomputed midstates for known tags
+    use std::sync::OnceLock;
+    static TAP_SIGHASH_MID: OnceLock<[u8; 32]> = OnceLock::new();
+    static BIP322_MID: OnceLock<[u8; 32]> = OnceLock::new();
+    static BIP340_CHALLENGE_MID: OnceLock<[u8; 32]> = OnceLock::new();
+    static BIP340_AUX_MID: OnceLock<[u8; 32]> = OnceLock::new();
+
+    let tag_hash = match tag {
+        b"TapSighash" => *TAP_SIGHASH_MID.get_or_init(|| sha256(b"TapSighash")),
+        b"BIP0322-signed-message" => *BIP322_MID.get_or_init(|| sha256(b"BIP0322-signed-message")),
+        b"BIP0340/challenge" => *BIP340_CHALLENGE_MID.get_or_init(|| sha256(b"BIP0340/challenge")),
+        b"BIP0340/aux" => *BIP340_AUX_MID.get_or_init(|| sha256(b"BIP0340/aux")),
+        _ => sha256(tag),
+    };
+
     let mut h = Sha256::new();
     h.update(tag_hash);
     h.update(tag_hash);

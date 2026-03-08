@@ -193,8 +193,8 @@ pub fn taproot_key_path_sighash(
         sig_msg.extend_from_slice(&h.finalize());
     }
 
-    // If SIGHASH_ALL (base 0x01 or Default):
-    if effective_base == 0x01 || effective_base == 0x00 {
+    // If SIGHASH_ALL (base 0x01, or Default which maps to 0x01):
+    if effective_base == 0x01 {
         let mut h = Sha256::new();
         for output in &tx.outputs {
             h.update(output.value.to_le_bytes());
@@ -339,7 +339,7 @@ pub fn taproot_script_path_sighash(
         sig_msg.extend_from_slice(&h.finalize());
     }
 
-    if effective_base == 0x01 || effective_base == 0x00 {
+    if effective_base == 0x01 {
         let mut h = Sha256::new();
         for output in &tx.outputs {
             h.update(output.value.to_le_bytes());
