@@ -380,6 +380,7 @@ fn key_to_hex(key: &DescriptorKey) -> String {
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

@@ -26,6 +26,7 @@ pub fn deserialize<'de, const N: usize, D: Deserializer<'de>>(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 #[cfg(feature = "serde")]
 mod tests {
     use serde::{Deserialize, Serialize};

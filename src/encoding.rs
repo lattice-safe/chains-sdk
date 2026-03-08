@@ -134,6 +134,7 @@ pub fn base58check_decode(s: &str) -> Result<(u8, Vec<u8>), SignerError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

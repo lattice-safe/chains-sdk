@@ -162,7 +162,7 @@ pub fn taproot_key_path_sighash(
         // sha_prevouts (SHA256 of all outpoints)
         let mut h = Sha256::new();
         for input in &tx.inputs {
-            h.update(&input.previous_output.txid);
+            h.update(input.previous_output.txid);
             h.update(input.previous_output.vout.to_le_bytes());
         }
         sig_msg.extend_from_slice(&h.finalize());
@@ -262,9 +262,135 @@ pub fn p2wpkh_script_code(pubkey_hash: &[u8; 20]) -> Vec<u8> {
     script
 }
 
+// ─── Taproot Script-Path Sighash (BIP-342) ─────────────────────────
+
+/// Compute the BIP-342 Taproot script-path sighash for a specific input.
+///
+/// This extends the key-path sighash (BIP-341) with:
+/// - `ext_flag = 1` (spend_type has bit 1 set)
+/// - `tapleaf_hash` — the tagged hash of the leaf being executed
+/// - `key_version = 0`
+/// - `codesep_pos` — position of the last executed OP_CODESEPARATOR (0xFFFFFFFF if none)
+///
+/// # Arguments
+/// - `tx` — The unsigned transaction
+/// - `input_idx` — Input being signed
+/// - `prevouts` — All previous outputs
+/// - `sighash_type` — Sighash flag
+/// - `tapleaf_hash` — 32-byte tagged hash `TapLeaf` of the executing script
+/// - `codesep_pos` — Last OP_CODESEPARATOR position, or `0xFFFFFFFF` if none
+pub fn taproot_script_path_sighash(
+    tx: &Transaction,
+    input_idx: usize,
+    prevouts: &[TxOut],
+    sighash_type: SighashType,
+    tapleaf_hash: &[u8; 32],
+    codesep_pos: u32,
+) -> Result<[u8; 32], SignerError> {
+    if input_idx >= tx.inputs.len() {
+        return Err(SignerError::SigningFailed(format!(
+            "input index {} out of range ({})", input_idx, tx.inputs.len()
+        )));
+    }
+    if prevouts.len() != tx.inputs.len() {
+        return Err(SignerError::SigningFailed(format!(
+            "prevouts length {} != inputs length {}", prevouts.len(), tx.inputs.len()
+        )));
+    }
+
+    let sighash_byte = sighash_type.to_byte();
+    let anyone_can_pay = sighash_byte & 0x80 != 0;
+    let base_type = sighash_byte & 0x03;
+    let effective_base = if sighash_byte == 0x00 { 0x01 } else { base_type };
+
+    let mut sig_msg = Vec::with_capacity(300);
+    sig_msg.push(0x00); // epoch = 0
+    sig_msg.push(sighash_byte);
+    sig_msg.extend_from_slice(&tx.version.to_le_bytes());
+    sig_msg.extend_from_slice(&tx.locktime.to_le_bytes());
+
+    if !anyone_can_pay {
+        let mut h = Sha256::new();
+        for input in &tx.inputs {
+            h.update(input.previous_output.txid);
+            h.update(input.previous_output.vout.to_le_bytes());
+        }
+        sig_msg.extend_from_slice(&h.finalize());
+
+        let mut h = Sha256::new();
+        for p in prevouts {
+            h.update(p.value.to_le_bytes());
+        }
+        sig_msg.extend_from_slice(&h.finalize());
+
+        let mut h = Sha256::new();
+        for p in prevouts {
+            let mut tmp = Vec::new();
+            crate::encoding::encode_compact_size(&mut tmp, p.script_pubkey.len() as u64);
+            h.update(&tmp);
+            h.update(&p.script_pubkey);
+        }
+        sig_msg.extend_from_slice(&h.finalize());
+
+        let mut h = Sha256::new();
+        for input in &tx.inputs {
+            h.update(input.sequence.to_le_bytes());
+        }
+        sig_msg.extend_from_slice(&h.finalize());
+    }
+
+    if effective_base == 0x01 || effective_base == 0x00 {
+        let mut h = Sha256::new();
+        for output in &tx.outputs {
+            h.update(output.value.to_le_bytes());
+            let mut tmp = Vec::new();
+            crate::encoding::encode_compact_size(&mut tmp, output.script_pubkey.len() as u64);
+            h.update(&tmp);
+            h.update(&output.script_pubkey);
+        }
+        sig_msg.extend_from_slice(&h.finalize());
+    }
+
+    // spend_type: ext_flag = 1 (bit 1), no annex (bit 0 = 0)
+    sig_msg.push(0x02); // ext_flag=1, annex=0 → 0b10 = 2
+
+    if anyone_can_pay {
+        let input = &tx.inputs[input_idx];
+        sig_msg.extend_from_slice(&input.previous_output.txid);
+        sig_msg.extend_from_slice(&input.previous_output.vout.to_le_bytes());
+        sig_msg.extend_from_slice(&prevouts[input_idx].value.to_le_bytes());
+        let mut tmp = Vec::new();
+        crate::encoding::encode_compact_size(&mut tmp, prevouts[input_idx].script_pubkey.len() as u64);
+        sig_msg.extend_from_slice(&tmp);
+        sig_msg.extend_from_slice(&prevouts[input_idx].script_pubkey);
+        sig_msg.extend_from_slice(&tx.inputs[input_idx].sequence.to_le_bytes());
+    } else {
+        sig_msg.extend_from_slice(&(input_idx as u32).to_le_bytes());
+    }
+
+    if effective_base == 0x03 && input_idx < tx.outputs.len() {
+        let mut h = Sha256::new();
+        let output = &tx.outputs[input_idx];
+        h.update(output.value.to_le_bytes());
+        let mut tmp = Vec::new();
+        crate::encoding::encode_compact_size(&mut tmp, output.script_pubkey.len() as u64);
+        h.update(&tmp);
+        h.update(&output.script_pubkey);
+        sig_msg.extend_from_slice(&h.finalize());
+    }
+
+    // Script-path extension (BIP-342):
+    sig_msg.extend_from_slice(tapleaf_hash);
+    sig_msg.push(0x00); // key_version = 0
+    sig_msg.extend_from_slice(&codesep_pos.to_le_bytes());
+
+    Ok(crypto::tagged_hash(b"TapSighash", &sig_msg))
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use super::super::transaction::*;
@@ -375,5 +501,90 @@ mod tests {
         assert_eq!(&code[3..23], &hash);
         assert_eq!(code[23], 0x88); // OP_EQUALVERIFY
         assert_eq!(code[24], 0xac); // OP_CHECKSIG
+    }
+
+    // ─── BIP-342 Script-Path Tests ─────────────────────────────────
+
+    #[test]
+    fn test_script_path_sighash_deterministic() {
+        let tx = sample_segwit_tx();
+        let prevouts = vec![TxOut {
+            value: 50_000,
+            script_pubkey: {
+                let mut spk = vec![0x51, 0x20];
+                spk.extend_from_slice(&[0xCC; 32]);
+                spk
+            },
+        }];
+        let leaf_hash = [0xDD; 32];
+        let h1 = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &leaf_hash, 0xFFFFFFFF
+        ).unwrap();
+        let h2 = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &leaf_hash, 0xFFFFFFFF
+        ).unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_script_path_different_from_key_path() {
+        let tx = sample_segwit_tx();
+        let prevouts = vec![TxOut {
+            value: 50_000,
+            script_pubkey: {
+                let mut spk = vec![0x51, 0x20];
+                spk.extend_from_slice(&[0xCC; 32]);
+                spk
+            },
+        }];
+        let leaf_hash = [0xDD; 32];
+        let h_key = taproot_key_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default
+        ).unwrap();
+        let h_script = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &leaf_hash, 0xFFFFFFFF
+        ).unwrap();
+        assert_ne!(h_key, h_script);
+    }
+
+    #[test]
+    fn test_script_path_different_leaf_hashes() {
+        let tx = sample_segwit_tx();
+        let prevouts = vec![TxOut {
+            value: 50_000,
+            script_pubkey: {
+                let mut spk = vec![0x51, 0x20];
+                spk.extend_from_slice(&[0xCC; 32]);
+                spk
+            },
+        }];
+        let h1 = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &[0xAA; 32], 0xFFFFFFFF
+        ).unwrap();
+        let h2 = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &[0xBB; 32], 0xFFFFFFFF
+        ).unwrap();
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_script_path_codesep_affects_hash() {
+        let tx = sample_segwit_tx();
+        let prevouts = vec![TxOut {
+            value: 50_000,
+            script_pubkey: {
+                let mut spk = vec![0x51, 0x20];
+                spk.extend_from_slice(&[0xCC; 32]);
+                spk
+            },
+        }];
+        let leaf = [0xDD; 32];
+        let h1 = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &leaf, 0xFFFFFFFF
+        ).unwrap();
+        let h2 = taproot_script_path_sighash(
+            &tx, 0, &prevouts, SighashType::Default, &leaf, 5
+        ).unwrap();
+        assert_ne!(h1, h2, "codesep_pos should affect the sighash");
     }
 }

@@ -52,6 +52,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

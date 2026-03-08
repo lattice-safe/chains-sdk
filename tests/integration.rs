@@ -194,7 +194,6 @@ mod mnemonic_multichaain {
     use trad_signer::hd_key::{ExtendedPrivateKey, DerivationPath};
     use trad_signer::ethereum::EthereumSigner;
     use trad_signer::bitcoin::BitcoinSigner;
-    use trad_signer::solana::SolanaSigner;
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     /// Full workflow: generate mnemonic → derive HD keys → sign on ETH, BTC, SOL

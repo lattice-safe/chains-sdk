@@ -2,7 +2,7 @@
 
 #[cfg(feature = "ethereum")]
 mod eip155 {
-    use trad_signer::ethereum::{EthereumSigner, ecrecover_digest};
+    use trad_signer::ethereum::EthereumSigner;
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -63,7 +63,6 @@ mod eip155 {
 #[cfg(feature = "hd_key")]
 mod xpub_xprv {
     use trad_signer::hd_key::ExtendedPrivateKey;
-    use trad_signer::traits::KeyPair;
 
     #[test]
     fn test_xprv_starts_with_xprv() {
@@ -165,9 +164,8 @@ mod btc_message_signing {
         let wrong_digest = bitcoin_message_hash(b"message B");
         let result = verifier.verify_prehashed(&wrong_digest, &sig);
         // May return Ok(false) or Err depending on implementation
-        match result {
-            Ok(valid) => assert!(!valid, "wrong digest should not verify"),
-            Err(_) => {} // Also acceptable
+        if let Ok(valid) = result {
+            assert!(!valid, "wrong digest should not verify");
         }
     }
 

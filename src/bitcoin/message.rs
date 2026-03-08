@@ -180,7 +180,6 @@ pub fn sign_simple_p2wpkh(
     signer: &super::BitcoinSigner,
     message: &[u8],
 ) -> Result<Vec<u8>, crate::error::SignerError> {
-    use crate::traits::KeyPair;
 
     let pubkey = signer.public_key_bytes();
     let pubkey_hash = crypto::hash160(&pubkey);
@@ -237,7 +236,6 @@ pub fn sign_simple_p2tr(
     signer: &super::schnorr::SchnorrSigner,
     message: &[u8],
 ) -> Result<Vec<u8>, crate::error::SignerError> {
-    use crate::traits::KeyPair;
 
     let x_only_pubkey_bytes = signer.public_key_bytes();
     let mut x_only = [0u8; 32];
@@ -287,6 +285,7 @@ pub fn sign_simple_p2tr(
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

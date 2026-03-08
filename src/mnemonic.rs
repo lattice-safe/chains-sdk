@@ -269,6 +269,7 @@ impl Mnemonic {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -307,7 +308,7 @@ mod tests {
         let seed = mnemonic.to_seed("TREZOR");
         // Official BIP-39 test vector for 128-bit all-zero entropy + "TREZOR" passphrase
         let expected = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04";
-        assert_eq!(hex::encode(&*seed), expected);
+        assert_eq!(hex::encode(*seed), expected);
     }
 
     // Round-trip: generate → phrase → parse → seed
@@ -429,7 +430,7 @@ mod tests {
         let m = Mnemonic::from_entropy(&entropy).unwrap();
         let seed = m.to_seed("TREZOR");
         assert_eq!(
-            hex::encode(&*seed),
+            hex::encode(*seed),
             "2e8905819b8723fe2c1d161860e5ee1830318dbf49a83bd451cfb8440c28bd6fa457fe1296106559a3c80937a1c1069be3a3a5bd381ee6260e8d9739fce1f607"
         );
     }
@@ -461,7 +462,7 @@ mod tests {
         let m = Mnemonic::from_entropy(&entropy).unwrap();
         let seed = m.to_seed("TREZOR");
         assert_eq!(
-            hex::encode(&*seed),
+            hex::encode(*seed),
             "bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8"
         );
     }

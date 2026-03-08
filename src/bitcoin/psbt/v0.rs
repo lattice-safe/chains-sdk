@@ -386,6 +386,7 @@ fn extract_tx_io_counts(raw_tx: &[u8]) -> Option<(usize, usize)> {
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

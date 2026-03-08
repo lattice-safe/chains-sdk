@@ -9,29 +9,28 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-trad-signer = { path = "..", features = [
-    "ethereum",
-    "bitcoin",
-    "solana",
-    "bls",
-] }
 
+[dependencies.trad-signer]
+path = ".."
+features = ["bitcoin", "hd_key", "mnemonic"]
+
+# Fuzz targets
 [[bin]]
-name = "fuzz_ethereum"
-path = "fuzz_targets/fuzz_ethereum.rs"
+name = "fuzz_from_wif"
+path = "fuzz_targets/fuzz_from_wif.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_bitcoin"
-path = "fuzz_targets/fuzz_bitcoin.rs"
+name = "fuzz_from_xprv"
+path = "fuzz_targets/fuzz_from_xprv.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_ed25519"
-path = "fuzz_targets/fuzz_ed25519.rs"
+name = "fuzz_psbt_deserialize"
+path = "fuzz_targets/fuzz_psbt_deserialize.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_bls"
-path = "fuzz_targets/fuzz_bls.rs"
+name = "fuzz_mnemonic_from_phrase"
+path = "fuzz_targets/fuzz_mnemonic_from_phrase.rs"
 doc = false

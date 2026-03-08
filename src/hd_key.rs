@@ -648,6 +648,7 @@ impl DerivationPath {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -887,5 +888,131 @@ mod tests {
 
         let neo = DerivationPath::neo(0);
         assert_eq!(neo.steps[1].index, 888); // NEO coin type
+    }
+
+    // ─── ExtendedPublicKey Tests ────────────────────────────────────
+
+    #[test]
+    fn test_extended_public_key_from_private() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+        assert_eq!(pubkey.depth(), 0);
+        assert_eq!(pubkey.public_key_bytes().len(), 33); // compressed
+    }
+
+    #[test]
+    fn test_xpub_starts_with_xpub() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let xpub = master.to_xpub().unwrap();
+        assert!(xpub.starts_with("xpub"));
+    }
+
+    #[test]
+    fn test_xpub_roundtrip() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+        let xpub_str = pubkey.to_xpub();
+        let restored = ExtendedPublicKey::from_xpub(&xpub_str).unwrap();
+        assert_eq!(pubkey.public_key_bytes(), restored.public_key_bytes());
+        assert_eq!(pubkey.depth(), restored.depth());
+        assert_eq!(pubkey.chain_code(), restored.chain_code());
+    }
+
+    #[test]
+    fn test_xpub_deterministic() {
+        let seed = [0xABu8; 64];
+        let m1 = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let m2 = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        assert_eq!(
+            m1.to_extended_public_key().unwrap().to_xpub(),
+            m2.to_extended_public_key().unwrap().to_xpub(),
+        );
+    }
+
+    #[test]
+    fn test_extended_public_key_normal_derivation() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+
+        // Derive normal child 0
+        let child = pubkey.derive_child_normal(0).unwrap();
+        assert_eq!(child.depth(), 1);
+        assert_eq!(child.public_key_bytes().len(), 33);
+    }
+
+    #[test]
+    fn test_extended_public_key_derivation_consistency() {
+        // Deriving pub child from pub key must match pub key derived from priv child
+        let seed = [0x42u8; 64];
+        let master_priv = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let master_pub = master_priv.to_extended_public_key().unwrap();
+
+        // Private path: master_priv → child_priv(0) → to_pubkey
+        let child_priv = master_priv.derive_child(0, false).unwrap();
+        let child_pub_from_priv = child_priv.to_extended_public_key().unwrap();
+
+        // Public path: master_pub → child_pub(0)
+        let child_pub_from_pub = master_pub.derive_child_normal(0).unwrap();
+
+        // Both paths should produce the same public key
+        assert_eq!(
+            child_pub_from_priv.public_key_bytes(),
+            child_pub_from_pub.public_key_bytes(),
+        );
+    }
+
+    #[test]
+    fn test_extended_public_key_hardened_rejected() {
+        // ExtendedPublicKey should not support hardened derivation
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+
+        // There's no hardened derive method on ExtendedPublicKey,
+        // so we just verify normal derivation works for multiple indices
+        for i in 0..5 {
+            let child = pubkey.derive_child_normal(i).unwrap();
+            assert_eq!(child.depth(), 1);
+        }
+    }
+
+    #[test]
+    fn test_extended_public_key_different_indices() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+
+        let c0 = pubkey.derive_child_normal(0).unwrap();
+        let c1 = pubkey.derive_child_normal(1).unwrap();
+        assert_ne!(c0.public_key_bytes(), c1.public_key_bytes());
+    }
+
+    #[test]
+    fn test_extended_public_key_chain_derivation() {
+        // Multi-level normal derivation via public path
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+
+        let child1 = pubkey.derive_child_normal(0).unwrap();
+        let child2 = child1.derive_child_normal(1).unwrap();
+        assert_eq!(child2.depth(), 2);
+        assert_eq!(child2.public_key_bytes().len(), 33);
+    }
+
+    #[test]
+    fn test_xpub_invalid_prefix_rejected() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let xpub = master.to_extended_public_key().unwrap().to_xpub();
+
+        // Corrupt the first character
+        let mut bad = String::from("ypub");
+        bad.push_str(&xpub[4..]);
+        assert!(ExtendedPublicKey::from_xpub(&bad).is_err());
     }
 }

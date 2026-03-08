@@ -477,6 +477,7 @@ fn parse_point(bytes: &[u8; 33]) -> Result<ProjectivePoint, SignerError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

@@ -191,13 +191,14 @@ impl Transaction {
         let base_size = self.serialize_legacy().len();
         let total_size = self.serialize_witness().len();
         let weight = base_size * 3 + total_size;
-        (weight + 3) / 4
+        weight.div_ceil(4)
     }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

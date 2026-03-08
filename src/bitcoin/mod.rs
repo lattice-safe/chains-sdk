@@ -406,6 +406,7 @@ impl traits::Verifier for BitcoinVerifier {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::traits::{KeyPair, Signer, Verifier};
@@ -529,12 +530,9 @@ mod tests {
         };
         let tampered = BitcoinSignature::from_bytes(&tampered_bytes);
         // Tampered DER may fail to parse (Err) or verify as invalid (Ok(false))
-        match tampered {
-            Ok(t) => {
-                let result = verifier.verify(b"tamper test", &t);
-                assert!(result.is_err() || !result.unwrap());
-            }
-            Err(_) => {} // tampered DER is invalid — expected
+        if let Ok(t) = tampered {
+            let result = verifier.verify(b"tamper test", &t);
+            assert!(result.is_err() || !result.unwrap());
         }
     }
 
