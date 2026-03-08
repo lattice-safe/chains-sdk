@@ -6,6 +6,7 @@
 pub mod descriptor;
 pub mod helpers;
 pub mod message;
+pub mod multisig;
 pub mod psbt;
 pub mod schnorr;
 pub mod scripts;
