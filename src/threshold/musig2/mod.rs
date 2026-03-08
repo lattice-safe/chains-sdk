@@ -44,5 +44,6 @@
 //! ```
 
 pub mod signing;
+pub mod adaptor;
 
 pub use signing::*;

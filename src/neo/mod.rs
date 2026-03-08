@@ -1,5 +1,7 @@
 //! NEO ECDSA signer using NIST P-256 (secp256r1) + SHA-256.
 
+pub mod transaction;
+
 use crate::crypto;
 use crate::error::SignerError;
 use crate::traits;
@@ -95,7 +97,7 @@ impl Drop for NeoSigner {
 }
 
 impl NeoSigner {
-    fn sign_digest(&self, digest: &[u8; 32]) -> Result<NeoSignature, SignerError> {
+    pub(crate) fn sign_digest(&self, digest: &[u8; 32]) -> Result<NeoSignature, SignerError> {
         let sig: P256Signature = self
             .signing_key
             .sign_prehash(digest)

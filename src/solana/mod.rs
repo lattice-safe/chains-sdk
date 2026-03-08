@@ -3,6 +3,8 @@
 //! Uses `ed25519-dalek` for signing. No pre-hashing — the blockchain
 //! hashes transactions before feeding them to the signer.
 
+pub mod transaction;
+
 use crate::error::SignerError;
 use crate::traits;
 use ed25519_dalek::Signer as DalekSigner;
@@ -41,7 +43,7 @@ impl SolanaSignature {
 
 /// Solana Ed25519 signer.
 pub struct SolanaSigner {
-    signing_key: ed25519_dalek::SigningKey,
+    pub(crate) signing_key: ed25519_dalek::SigningKey,
 }
 
 impl SolanaSigner {
@@ -50,6 +52,12 @@ impl SolanaSigner {
     /// Solana addresses are simply the Base58 encoding of the 32-byte Ed25519 public key.
     pub fn address(&self) -> String {
         bs58::encode(self.signing_key.verifying_key().as_bytes()).into_string()
+    }
+
+    /// Return the 32-byte public key as a fixed-size array.
+    #[must_use]
+    pub fn public_key_bytes_32(&self) -> [u8; 32] {
+        *self.signing_key.verifying_key().as_bytes()
     }
 }
 

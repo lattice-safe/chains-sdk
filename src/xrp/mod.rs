@@ -2,6 +2,8 @@
 //!
 //! XRP allows two key types: secp256k1 and Ed25519.
 
+pub mod transaction;
+
 use crate::crypto;
 use crate::error::SignerError;
 use crate::traits;

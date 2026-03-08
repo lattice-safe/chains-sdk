@@ -10,6 +10,7 @@ pub mod tapscript;
 pub mod psbt;
 pub mod descriptor;
 pub mod transaction;
+pub mod helpers;
 pub mod sighash;
 
 use crate::crypto;

@@ -15,7 +15,7 @@ pub struct KeyPackage {
     /// Participant identifier (1-based, non-zero).
     pub identifier: u16,
     /// The participant's secret signing share `sk_i = f(i)`.
-    secret_share: Zeroizing<Scalar>,
+    pub(crate) secret_share: Zeroizing<Scalar>,
     /// The group's combined public key `PK = G * s`.
     pub group_public_key: AffinePoint,
     /// Min participants required to sign (threshold).
