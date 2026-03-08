@@ -37,3 +37,9 @@ pub mod hd_key;
 
 #[cfg(feature = "mnemonic")]
 pub mod mnemonic;
+
+#[cfg(feature = "frost")]
+pub mod frost;
+
+#[cfg(feature = "musig2")]
+pub mod musig2;

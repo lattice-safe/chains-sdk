@@ -1,6 +1,6 @@
 [package]
 name = "trad-signer"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
@@ -20,6 +20,8 @@ default = [
     "bls",
     "hd_key",
     "mnemonic",
+    "frost",
+    "musig2",
 ]
 std = []
 serde = ["dep:serde", "k256/serde", "p256/serde"]
@@ -37,6 +39,8 @@ neo = ["dep:p256", "dep:sha2", "dep:ripemd"]
 bls = ["dep:blst"]
 hd_key = ["dep:k256", "dep:sha2", "dep:hmac", "dep:ripemd"]
 mnemonic = ["dep:sha2", "dep:hmac", "dep:pbkdf2", "hd_key"]
+frost = ["dep:k256", "dep:sha2"]
+musig2 = ["dep:k256", "dep:sha2"]
 
 [dependencies]
 # ECDSA curves
