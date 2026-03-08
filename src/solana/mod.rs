@@ -3,6 +3,7 @@
 //! Uses `ed25519-dalek` for signing. No pre-hashing — the blockchain
 //! hashes transactions before feeding them to the signer.
 
+pub mod dex;
 pub mod programs;
 pub mod token_extensions;
 pub mod transaction;

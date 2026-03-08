@@ -24,8 +24,6 @@ pub const TOKEN_2022_ID: [u8; 32] = [
     0x00, 0xAA,
 ];
 
-/// System Program ID.
-const SYSTEM_PROGRAM_ID: [u8; 32] = [0; 32];
 
 // ═══════════════════════════════════════════════════════════════════
 // Default Account State Extension
