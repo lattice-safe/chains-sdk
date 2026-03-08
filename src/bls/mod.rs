@@ -5,6 +5,7 @@
 
 pub mod threshold;
 pub mod eip2333;
+pub mod keystore;
 
 use crate::error::SignerError;
 use crate::traits;

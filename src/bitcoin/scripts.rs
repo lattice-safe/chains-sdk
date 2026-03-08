@@ -362,7 +362,7 @@ fn push_script_number(script: &mut Vec<u8>, n: i64) {
         script.push(0x00); // OP_0
         return;
     }
-    if n >= 1 && n <= 16 {
+    if (1..=16).contains(&n) {
         script.push(0x50 + n as u8); // OP_1..OP_16
         return;
     }
@@ -378,7 +378,7 @@ fn push_script_number(script: &mut Vec<u8>, n: i64) {
     }
 
     // Add sign bit if needed
-    if bytes.last().map_or(false, |b| b & 0x80 != 0) {
+    if bytes.last().is_some_and(|b| b & 0x80 != 0) {
         bytes.push(if negative { 0x80 } else { 0x00 });
     } else if negative {
         let last = bytes.len() - 1;

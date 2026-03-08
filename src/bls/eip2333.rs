@@ -252,7 +252,7 @@ fn hkdf_expand_sha256(
     let prk = mac.finalize().into_bytes();
 
     // Expand: T(1) || T(2) || ... where T(i) = HMAC-SHA256(PRK, T(i-1) || info || i)
-    let n = (length + 31) / 32;
+    let n = length.div_ceil(32);
     let mut okm = Vec::with_capacity(n * 32);
     let mut t_prev = Vec::new();
 

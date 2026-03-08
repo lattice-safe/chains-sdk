@@ -153,7 +153,7 @@ pub fn encode_packed(values: &[AbiValue]) -> Vec<u8> {
             AbiValue::String(s) => buf.extend_from_slice(s.as_bytes()),
             AbiValue::Array(items) => {
                 for item in items {
-                    buf.extend_from_slice(&encode_packed(&[item.clone()]));
+                    buf.extend_from_slice(&encode_packed(std::slice::from_ref(item)));
                 }
             }
             AbiValue::Tuple(items) => {
@@ -339,6 +339,7 @@ pub fn encode_constructor(bytecode: &[u8], constructor_args: &[AbiValue]) -> Vec
 }
 
 /// Build and sign a contract deployment transaction (EIP-1559).
+#[allow(clippy::too_many_arguments)]
 pub fn deploy_contract(
     signer: &super::EthereumSigner,
     bytecode: &[u8],

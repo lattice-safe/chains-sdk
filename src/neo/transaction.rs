@@ -137,10 +137,10 @@ fn int_to_bytes(value: i64) -> Vec<u8> {
         val >>= 8;
     }
     // Sign bit handling
-    if !negative && (bytes.last().map_or(false, |b| b & 0x80 != 0)) {
+    if !negative && (bytes.last().is_some_and(|b| b & 0x80 != 0)) {
         bytes.push(0);
     }
-    if negative && (bytes.last().map_or(false, |b| b & 0x80 == 0)) {
+    if negative && (bytes.last().is_some_and(|b| b & 0x80 == 0)) {
         bytes.push(0xFF);
     }
     bytes

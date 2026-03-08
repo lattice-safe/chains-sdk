@@ -31,7 +31,7 @@ bitcoin = ["dep:k256"]
 solana = ["dep:ed25519-dalek", "dep:rand_core"]
 xrp = ["dep:k256", "dep:ed25519-dalek", "dep:rand_core"]
 neo = ["dep:p256"]
-bls = ["dep:blst"]
+bls = ["dep:blst", "dep:scrypt", "dep:aes", "dep:ctr"]
 hd_key = ["dep:k256", "dep:hmac"]
 mnemonic = ["dep:hmac", "dep:pbkdf2", "hd_key"]
 frost = ["dep:k256"]
@@ -89,6 +89,7 @@ ctr = { version = "0.9", optional = true }
 criterion = { version = "0.5", features = ["html_reports"] }
 sha3 = "0.10"
 serde_json = "1.0"
+proptest = "1.4"
 
 [[bench]]
 name = "signing_bench"
