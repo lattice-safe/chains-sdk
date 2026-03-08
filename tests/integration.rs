@@ -338,3 +338,241 @@ mod threshold_e2e {
         assert!(musig2::verify(&sig, &ctx.x_only_pubkey, msg).unwrap());
     }
 }
+
+// ─── PSBT End-to-End Integration ────────────────────────────────────
+
+#[cfg(feature = "bitcoin")]
+mod psbt_e2e {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use trad_signer::bitcoin::BitcoinSigner;
+    use trad_signer::bitcoin::psbt::v0::Psbt;
+    use trad_signer::bitcoin::tapscript::SighashType;
+    use trad_signer::bitcoin::transaction::*;
+    use trad_signer::traits::{KeyPair, Signer};
+
+    #[test]
+    fn test_psbt_segwit_sign_e2e() {
+        // 1. Generate a signer
+        let signer = BitcoinSigner::generate().unwrap();
+        let pubkey = signer.public_key_bytes();
+        let pubkey_hash = trad_signer::crypto::hash160(&pubkey);
+
+        // 2. Build a raw unsigned transaction
+        let mut tx = Transaction::new(2);
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: [0xAA; 32], vout: 0 },
+            script_sig: vec![],
+            sequence: 0xFFFFFFFF,
+        });
+        tx.outputs.push(TxOut {
+            value: 49_000,
+            script_pubkey: {
+                let mut spk = vec![0x00, 0x14];
+                spk.extend_from_slice(&[0xBB; 20]);
+                spk
+            },
+        });
+        let raw_tx = tx.serialize_legacy();
+
+        // 3. Build the PSBT
+        let mut psbt = Psbt::new();
+        psbt.set_unsigned_tx(&raw_tx);
+        let idx = psbt.add_input();
+
+        // Set witness UTXO: 50,000 sat at the signer's P2WPKH scriptPubKey
+        let mut script_pk = vec![0x00, 0x14];
+        script_pk.extend_from_slice(&pubkey_hash);
+        psbt.set_witness_utxo(idx, 50_000, &script_pk);
+
+        // 4. Sign the input
+        let result = psbt.sign_segwit_input(idx, &signer, SighashType::All);
+        assert!(result.is_ok(), "PSBT signing failed: {:?}", result.err());
+
+        // 5. Verify partial sig is stored
+        let input_map = &psbt.inputs[idx];
+        let mut partial_sig_key = vec![0x02]; // InputKey::PartialSig
+        partial_sig_key.extend_from_slice(&pubkey);
+        assert!(
+            input_map.contains_key(&partial_sig_key),
+            "partial signature not found in PSBT input"
+        );
+
+        // 6. Verify the sig has sighash byte appended
+        let sig_bytes = input_map.get(&partial_sig_key).unwrap();
+        assert!(sig_bytes.len() > 64, "signature too short");
+        assert_eq!(*sig_bytes.last().unwrap(), SighashType::All.to_byte());
+    }
+
+    #[test]
+    fn test_psbt_roundtrip_serialization_with_sig() {
+        let signer = BitcoinSigner::generate().unwrap();
+        let pubkey = signer.public_key_bytes();
+        let pubkey_hash = trad_signer::crypto::hash160(&pubkey);
+
+        let mut tx = Transaction::new(2);
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: [0xCC; 32], vout: 1 },
+            script_sig: vec![],
+            sequence: 0xFFFFFFFE,
+        });
+        tx.outputs.push(TxOut {
+            value: 30_000,
+            script_pubkey: vec![0x00, 0x14, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
+                0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
+                0xDD, 0xDD, 0xDD, 0xDD],
+        });
+        psbt_add_output_placeholder();
+
+        let mut psbt = Psbt::new();
+        psbt.set_unsigned_tx(&tx.serialize_legacy());
+        let idx = psbt.add_input();
+        psbt.add_output();
+        let mut spk = vec![0x00, 0x14];
+        spk.extend_from_slice(&pubkey_hash);
+        psbt.set_witness_utxo(idx, 50_000, &spk);
+
+        psbt.sign_segwit_input(idx, &signer, SighashType::All).unwrap();
+
+        // Serialize → Deserialize roundtrip
+        let serialized = psbt.serialize();
+        let deserialized = Psbt::deserialize(&serialized).unwrap();
+
+        // The unsigned tx should survive
+        assert_eq!(psbt.unsigned_tx(), deserialized.unsigned_tx());
+        // Input count should match
+        assert_eq!(deserialized.inputs.len(), 1);
+    }
+
+    fn psbt_add_output_placeholder() {
+        // helper that exists just for the test structure
+    }
+}
+
+// ─── BIP-322 Test Vectors ───────────────────────────────────────────
+
+#[cfg(feature = "bitcoin")]
+mod bip322_vectors {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use trad_signer::bitcoin::message;
+
+    /// BIP-322 test vector: empty message hash
+    /// From: https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
+    #[test]
+    fn test_bip322_vector_message_hash_empty() {
+        let hash = message::message_hash(b"");
+        assert_eq!(
+            hex::encode(hash),
+            "c90c269c4f8fcbe6880f72a721ddfbf1914268a794cbb21cfafee13770ae19f1",
+            "BIP-322 message hash for empty message does not match official vector"
+        );
+    }
+
+    /// BIP-322 test vector: "Hello World" message hash
+    #[test]
+    fn test_bip322_vector_message_hash_hello_world() {
+        let hash = message::message_hash(b"Hello World");
+        assert_eq!(
+            hex::encode(hash),
+            "f0eb03b1a75ac6d9847f55c624a99169b5dccba2a31f5b23bea77ba270de0a7a",
+            "BIP-322 message hash for 'Hello World' does not match official vector"
+        );
+    }
+
+    /// BIP-322 sign→verify roundtrip with P2WPKH
+    #[test]
+    fn test_bip322_sign_verify_roundtrip_p2wpkh() {
+        use trad_signer::bitcoin::BitcoinSigner;
+        use trad_signer::bitcoin::sighash;
+        use trad_signer::bitcoin::tapscript::SighashType;
+        use trad_signer::bitcoin::transaction::*;
+        use trad_signer::traits::{KeyPair, Signer};
+
+        let signer = BitcoinSigner::generate().unwrap();
+        let pubkey = signer.public_key_bytes();
+        let mut pubkey33 = [0u8; 33];
+        pubkey33.copy_from_slice(&pubkey);
+        let msg = b"BIP-322 integration roundtrip";
+
+        // Sign
+        let proof = message::sign_simple_p2wpkh(&signer, msg).unwrap();
+        assert!(!proof.is_empty(), "proof should not be empty");
+
+        // Manually compute signature for verification
+        let pubkey_hash = trad_signer::crypto::hash160(&pubkey33);
+        let script_pk = message::p2wpkh_script_pubkey(&pubkey_hash);
+        let to_spend = message::create_to_spend_tx(&script_pk, msg);
+        let to_spend_txid = message::compute_txid(&to_spend);
+
+        let mut tx = Transaction::new(0);
+        let mut txid_internal = to_spend_txid;
+        txid_internal.reverse();
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: txid_internal, vout: 0 },
+            script_sig: vec![],
+            sequence: 0,
+        });
+        tx.outputs.push(TxOut { value: 0, script_pubkey: vec![0x6a] });
+
+        let sc = sighash::p2wpkh_script_code(&pubkey_hash);
+        let prev = sighash::PrevOut { script_code: sc, value: 0 };
+        let sh = sighash::segwit_v0_sighash(&tx, 0, &prev, SighashType::All).unwrap();
+        let sig = signer.sign_prehashed(&sh).unwrap();
+
+        // Verify
+        let valid = message::verify_simple_p2wpkh(&pubkey33, msg, &sig.to_bytes()).unwrap();
+        assert!(valid, "BIP-322 P2WPKH roundtrip verification failed");
+
+        // Verify wrong message fails
+        let wrong = message::verify_simple_p2wpkh(&pubkey33, b"wrong msg", &sig.to_bytes());
+        if let Ok(v) = wrong {
+            assert!(!v, "wrong message should not verify");
+        }
+    }
+
+    /// BIP-322 sign→verify roundtrip with P2TR (Schnorr)
+    #[test]
+    fn test_bip322_sign_verify_roundtrip_p2tr() {
+        use trad_signer::bitcoin::schnorr::SchnorrSigner;
+        use trad_signer::bitcoin::sighash;
+        use trad_signer::bitcoin::tapscript::SighashType;
+        use trad_signer::bitcoin::transaction::*;
+        use trad_signer::traits::{KeyPair, Signer};
+
+        let signer = SchnorrSigner::generate().unwrap();
+        let pubkey = signer.public_key_bytes();
+        let mut x_only = [0u8; 32];
+        x_only.copy_from_slice(&pubkey);
+        let msg = b"BIP-322 P2TR roundtrip";
+
+        // Sign
+        let proof = message::sign_simple_p2tr(&signer, msg).unwrap();
+        assert!(!proof.is_empty());
+
+        // Manually compute Schnorr signature for verification
+        let script_pk = message::p2tr_script_pubkey(&x_only);
+        let to_spend = message::create_to_spend_tx(&script_pk, msg);
+        let to_spend_txid = message::compute_txid(&to_spend);
+
+        let mut tx = Transaction::new(0);
+        let mut txid_internal = to_spend_txid;
+        txid_internal.reverse();
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: txid_internal, vout: 0 },
+            script_sig: vec![],
+            sequence: 0,
+        });
+        tx.outputs.push(TxOut { value: 0, script_pubkey: vec![0x6a] });
+
+        let prevouts = vec![TxOut { value: 0, script_pubkey: script_pk }];
+        let sh = sighash::taproot_key_path_sighash(&tx, 0, &prevouts, SighashType::Default).unwrap();
+        let sig = signer.sign(&sh).unwrap();
+
+        // Verify
+        let mut sig64 = [0u8; 64];
+        sig64.copy_from_slice(&sig.bytes);
+        let valid = message::verify_simple_p2tr(&x_only, msg, &sig64).unwrap();
+        assert!(valid, "BIP-322 P2TR roundtrip verification failed");
+    }
+}

@@ -133,6 +133,9 @@ criterion_group!(
     bench_musig2,
     bench_frost,
     bench_mnemonic,
+    bench_sighash,
+    bench_transaction,
+    bench_xpub,
 );
 criterion_main!(benches);
 
@@ -258,5 +261,144 @@ fn bench_mnemonic(c: &mut Criterion) {
     c.bench_function("mnemonic_to_seed", |b| {
         let m = Mnemonic::generate(12).unwrap();
         b.iter(|| m.to_seed(black_box("")))
+    });
+}
+
+// ─── NEW: Sighash benchmarks ───────────────────────────────────────
+
+fn bench_sighash(c: &mut Criterion) {
+    use trad_signer::bitcoin::sighash;
+    use trad_signer::bitcoin::tapscript::SighashType;
+    use trad_signer::bitcoin::transaction::*;
+
+    // Build a realistic 2-input, 2-output transaction
+    let mut tx = Transaction::new(2);
+    for i in 0u8..2 {
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: [i; 32], vout: 0 },
+            script_sig: vec![],
+            sequence: 0xFFFFFFFF,
+        });
+    }
+    for _ in 0..2 {
+        tx.outputs.push(TxOut {
+            value: 50_000,
+            script_pubkey: vec![0x00, 0x14,
+                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB],
+        });
+    }
+
+    let prev_out = sighash::PrevOut {
+        script_code: sighash::p2wpkh_script_code(&[0xCC; 20]),
+        value: 100_000,
+    };
+
+    c.bench_function("sighash_segwit_v0", |b| {
+        b.iter(|| {
+            sighash::segwit_v0_sighash(
+                black_box(&tx), 0, black_box(&prev_out), SighashType::All
+            ).unwrap()
+        })
+    });
+
+    let prevouts: Vec<TxOut> = (0..2).map(|_| TxOut {
+        value: 100_000,
+        script_pubkey: {
+            let mut spk = vec![0x51, 0x20];
+            spk.extend_from_slice(&[0xCC; 32]);
+            spk
+        },
+    }).collect();
+
+    c.bench_function("sighash_taproot_key_path", |b| {
+        b.iter(|| {
+            sighash::taproot_key_path_sighash(
+                black_box(&tx), 0, black_box(&prevouts), SighashType::Default
+            ).unwrap()
+        })
+    });
+
+    let leaf_hash = [0xDD; 32];
+    c.bench_function("sighash_taproot_script_path", |b| {
+        b.iter(|| {
+            sighash::taproot_script_path_sighash(
+                black_box(&tx), 0, black_box(&prevouts), SighashType::Default,
+                black_box(&leaf_hash), 0xFFFFFFFF
+            ).unwrap()
+        })
+    });
+}
+
+// ─── NEW: Transaction serialization benchmarks ─────────────────────
+
+fn bench_transaction(c: &mut Criterion) {
+    use trad_signer::bitcoin::transaction::*;
+
+    // 2-in, 2-out transaction with witness
+    let mut tx = Transaction::new(2);
+    for i in 0u8..2 {
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: [i; 32], vout: 0 },
+            script_sig: vec![],
+            sequence: 0xFFFFFFFF,
+        });
+    }
+    for _ in 0..2 {
+        tx.outputs.push(TxOut {
+            value: 50_000,
+            script_pubkey: vec![0x00, 0x14,
+                0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+                0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
+        });
+    }
+    tx.witnesses.push(vec![vec![0x30; 72], vec![0x02; 33]]);
+    tx.witnesses.push(vec![vec![0x30; 71], vec![0x02; 33]]);
+
+    c.bench_function("tx_serialize_legacy", |b| {
+        b.iter(|| black_box(tx.serialize_legacy()))
+    });
+    c.bench_function("tx_serialize_witness", |b| {
+        b.iter(|| black_box(tx.serialize_witness()))
+    });
+    c.bench_function("tx_txid", |b| {
+        b.iter(|| black_box(tx.txid()))
+    });
+    c.bench_function("tx_vsize", |b| {
+        b.iter(|| black_box(tx.vsize()))
+    });
+
+    let raw = tx.serialize_legacy();
+    c.bench_function("tx_parse_unsigned", |b| {
+        b.iter(|| parse_unsigned_tx(black_box(&raw)).unwrap())
+    });
+}
+
+// ─── NEW: ExtendedPublicKey + address benchmarks ───────────────────
+
+fn bench_xpub(c: &mut Criterion) {
+    use trad_signer::hd_key::ExtendedPrivateKey;
+
+    let seed = [0x42u8; 64];
+    let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+    let xpub = master.to_extended_public_key().unwrap();
+    let xpub_str = xpub.to_xpub();
+
+    c.bench_function("xpub_derive_child_normal", |b| {
+        b.iter(|| xpub.derive_child_normal(black_box(0)).unwrap())
+    });
+    c.bench_function("xpub_to_xpub_string", |b| {
+        b.iter(|| black_box(xpub.to_xpub()))
+    });
+    c.bench_function("xpub_from_xpub_string", |b| {
+        b.iter(|| {
+            trad_signer::hd_key::ExtendedPublicKey::from_xpub(black_box(&xpub_str)).unwrap()
+        })
+    });
+    c.bench_function("xpub_p2wpkh_address", |b| {
+        b.iter(|| xpub.p2wpkh_address(black_box("bc")).unwrap())
+    });
+    c.bench_function("xpub_p2tr_address", |b| {
+        b.iter(|| xpub.p2tr_address(black_box("bc")).unwrap())
     });
 }

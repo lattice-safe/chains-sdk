@@ -21,7 +21,7 @@
 
 ```toml
 [dependencies]
-trad-signer = "0.4"
+trad-signer = "0.5"
 ```
 
 ---
@@ -306,18 +306,26 @@ assert!(validate_sol("11111111111111111111111111111112"));               // Sola
 
 ---
 
-## BIP-322 Full Message Signing
+## BIP-322 Message Signing & Verification
 
 ```rust
-use trad_signer::bitcoin::message;
+use trad_signer::bitcoin::{BitcoinSigner, message};
+use trad_signer::bitcoin::schnorr::SchnorrSigner;
+use trad_signer::traits::{KeyPair, Signer};
 
-// Sign a message using BIP-322 "full" format (virtual tx chain)
-let witness = message::sign_full(
-    &private_key_bytes, b"Hello World", &script_pubkey,
-)?;
+// ── P2WPKH (SegWit) ──
+let signer = BitcoinSigner::generate()?;
+let proof = message::sign_simple_p2wpkh(&signer, b"Hello World")?;
 
-// Verify against the signer's script
-let valid = message::verify_full(&witness, b"Hello World", &script_pubkey)?;
+// Verify
+let pubkey = signer.public_key_bytes();
+let mut pk33 = [0u8; 33];
+pk33.copy_from_slice(&pubkey);
+let valid = message::verify_simple_p2wpkh(&pk33, b"Hello World", &signature_bytes)?;
+
+// ── P2TR (Taproot / Schnorr) ──
+let schnorr_signer = SchnorrSigner::generate()?;
+let proof = message::sign_simple_p2tr(&schnorr_signer, b"Hello World")?;
 ```
 
 ---
@@ -325,17 +333,24 @@ let valid = message::verify_full(&witness, b"Hello World", &script_pubkey)?;
 ## PSBT (Partially Signed Bitcoin Transactions)
 
 ```rust
+use trad_signer::bitcoin::BitcoinSigner;
 use trad_signer::bitcoin::psbt::v0::Psbt;
+use trad_signer::bitcoin::tapscript::SighashType;
+use trad_signer::traits::KeyPair;
 
 // Deserialize a PSBT
-let psbt = Psbt::deserialize(&psbt_bytes)?;
-println!("Inputs: {}", psbt.inputs.len());
-println!("Outputs: {}", psbt.outputs.len());
-println!("PSBT ID: {}", hex::encode(psbt.psbt_id()));
+let mut psbt = Psbt::deserialize(&psbt_bytes)?;
+
+// Auto-sign a SegWit input (computes BIP-143 sighash internally)
+let signer = BitcoinSigner::from_wif(&wif)?;
+psbt.sign_segwit_input(0, &signer, SighashType::All)?;
+
+// Auto-sign a Taproot input (computes BIP-341 sighash internally)
+// psbt.sign_taproot_input(0, &schnorr_signer, SighashType::Default)?;
 
 // Round-trip: serialize → deserialize
 let reserialized = psbt.serialize();
-assert_eq!(psbt_bytes, reserialized);
+let restored = Psbt::deserialize(&reserialized)?;
 ```
 
 ---
@@ -358,7 +373,7 @@ All modules are enabled by default. Disable unused ones to reduce compile time:
 
 ```toml
 [dependencies]
-trad-signer = { version = "0.4", default-features = false, features = ["ethereum", "frost"] }
+trad-signer = { version = "0.5", default-features = false, features = ["ethereum", "frost"] }
 ```
 
 | Feature | Description |
@@ -385,7 +400,7 @@ trad-signer = { version = "0.4", default-features = false, features = ["ethereum
 - Constant-time comparisons via `subtle::ConstantTimeEq`
 - FROST nonces are single-use `Zeroizing<Scalar>` with drop guards
 - `cargo audit`: **0 vulnerabilities** across 117+ dependencies
-- **445+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-322, BIP-327, BIP-340, BIP-341, RFC 6979, RFC 8032, RFC 9591, and FIPS 186-4 vectors
+- **568+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, and FIPS 186-4 vectors
 
 ## Architecture
 
@@ -399,8 +414,10 @@ src/
 │   ├── mod.rs         # ECDSA signer, WIF, P2PKH/P2WPKH, BIP-137
 │   ├── schnorr.rs     # BIP-340 Schnorr, P2TR addresses
 │   ├── taproot.rs     # BIP-341/342 Taproot scripts
-│   ├── message.rs     # BIP-322 full message signing
-│   ├── psbt/          # BIP-174 Partially Signed Bitcoin Transactions
+│   ├── sighash.rs     # BIP-143/341/342 sighash computation
+│   ├── transaction.rs # Transaction serialization, txid, vsize
+│   ├── message.rs     # BIP-322 sign + verify (P2WPKH / P2TR)
+│   ├── psbt/          # BIP-174 PSBT with auto-signing (SegWit + Taproot)
 │   └── descriptor.rs  # BIP-380-386 output descriptors
 ├── ethereum/          # EIP-191/712/155, ecrecover
 ├── solana/            # Ed25519 signing
