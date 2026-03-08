@@ -10,6 +10,7 @@ use crate::error::SignerError;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroizing;
+use core::fmt;
 
 /// AES-128-CTR cipher type alias.
 type Aes128Ctr = ctr::Ctr64BE<aes::Aes128>;
@@ -55,7 +56,7 @@ impl ScryptParams {
 /// An encrypted Ethereum keystore (V3 format).
 ///
 /// Fields correspond to the JSON keystore standard.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Keystore {
     /// UUID for this keystore.
     pub id: String,
@@ -198,14 +199,25 @@ impl Keystore {
     }
 }
 
+impl fmt::Debug for Keystore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Keystore")
+            .field("id", &self.id)
+            .field("address", &self.address)
+            .field("ciphertext", &"[REDACTED]")
+            .field("mac", &"[REDACTED]")
+            .finish()
+    }
+}
+
 // ─── Internal Helpers ──────────────────────────────────────────────
 
-fn derive_scrypt_key(password: &[u8], salt: &[u8], params: &ScryptParams) -> Result<Vec<u8>, SignerError> {
+fn derive_scrypt_key(password: &[u8], salt: &[u8], params: &ScryptParams) -> Result<Zeroizing<Vec<u8>>, SignerError> {
     use scrypt::scrypt;
     let log_n = (params.n as f64).log2() as u8;
     let scrypt_params = scrypt::Params::new(log_n, params.r, params.p, params.dklen as usize)
         .map_err(|e| SignerError::EncodingError(format!("scrypt params: {e}")))?;
-    let mut derived = vec![0u8; params.dklen as usize];
+    let mut derived = Zeroizing::new(vec![0u8; params.dklen as usize]);
     scrypt(password, salt, &scrypt_params, &mut derived)
         .map_err(|e| SignerError::EncodingError(format!("scrypt: {e}")))?;
     Ok(derived)

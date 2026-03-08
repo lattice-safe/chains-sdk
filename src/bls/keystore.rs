@@ -9,7 +9,9 @@
 use crate::error::SignerError;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
+use core::fmt;
 
 /// AES-128-CTR cipher type alias.
 type Aes128Ctr = ctr::Ctr64BE<aes::Aes128>;
@@ -56,7 +58,7 @@ impl BlsScryptParams {
 }
 
 /// An encrypted BLS keystore (EIP-2335 v4 format).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BlsKeystore {
     /// UUID for this keystore.
     pub uuid: String,
@@ -154,7 +156,7 @@ impl BlsKeystore {
         hasher.update(&self.ciphertext);
         let expected = hasher.finalize();
 
-        if expected.as_slice() != self.checksum {
+        if expected.as_slice().ct_eq(&self.checksum).unwrap_u8() == 0 {
             return Err(SignerError::ParseError(
                 "EIP-2335: checksum mismatch (wrong password?)".into(),
             ));
@@ -199,18 +201,30 @@ impl BlsKeystore {
     }
 }
 
+impl fmt::Debug for BlsKeystore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BlsKeystore")
+            .field("uuid", &self.uuid)
+            .field("pubkey", &self.pubkey)
+            .field("path", &self.path)
+            .field("ciphertext", &"[REDACTED]")
+            .field("checksum", &"[REDACTED]")
+            .finish()
+    }
+}
+
 // ─── Internal Helpers ──────────────────────────────────────────────
 
 fn derive_scrypt_key(
     password: &[u8],
     salt: &[u8],
     params: &BlsScryptParams,
-) -> Result<Vec<u8>, SignerError> {
+) -> Result<Zeroizing<Vec<u8>>, SignerError> {
     let log_n = (params.n as f64).log2() as u8;
     let scrypt_params = scrypt::Params::new(log_n, params.r, params.p, params.dklen as usize)
         .map_err(|e| SignerError::ParseError(format!("scrypt params: {e}")))?;
 
-    let mut dk = vec![0u8; params.dklen as usize];
+    let mut dk = Zeroizing::new(vec![0u8; params.dklen as usize]);
     scrypt::scrypt(password, salt, &scrypt_params, &mut dk)
         .map_err(|e| SignerError::ParseError(format!("scrypt failed: {e}")))?;
     Ok(dk)

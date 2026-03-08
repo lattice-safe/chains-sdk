@@ -12,6 +12,7 @@ pub mod error;
 pub mod traits;
 pub mod crypto;
 pub mod encoding;
+pub mod security;
 
 #[cfg(feature = "serde")]
 pub(crate) mod serde_zeroizing;

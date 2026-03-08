@@ -116,14 +116,14 @@ pub fn derive_key_from_path(
     path: &[u32],
 ) -> Result<Zeroizing<[u8; 32]>, SignerError> {
     let master = derive_master_sk(seed)?;
-    let mut current = *master;
+    let mut current = Zeroizing::new(*master);
 
     for &index in path {
         let child = derive_child_sk(&current, index)?;
-        current = *child;
+        *current = *child;
     }
 
-    Ok(Zeroizing::new(current))
+    Ok(Zeroizing::new(*current))
 }
 
 /// Create a `BlsSigner` from a derived key at an EIP-2334 validator signing path.
@@ -206,14 +206,14 @@ fn derive_lamport_pk(
     }
 
     // Flip: for each of 32 chunks, XOR with 0xFF
-    let mut not_ikm = [0u8; 32];
+    let mut not_ikm = Zeroizing::new([0u8; 32]);
     for i in 0..32 {
         not_ikm[i] = parent_sk[i] ^ 0xFF;
     }
 
     let mut mac = HmacSha256::new_from_slice(&salt)
         .map_err(|_| SignerError::SigningFailed("HMAC init failed".into()))?;
-    mac.update(&not_ikm);
+    mac.update(&*not_ikm);
     let prk_flip = mac.finalize().into_bytes();
 
     let mut lamport_1 = Vec::with_capacity(32 * 32);

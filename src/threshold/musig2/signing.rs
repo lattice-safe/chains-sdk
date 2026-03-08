@@ -20,7 +20,7 @@ fn tagged_hash_scalar(tag: &[u8], data: &[u8]) -> Scalar {
 // ─── Key Aggregation (BIP-327 KeyAgg) ───────────────────────────────
 
 /// Aggregated key context from `key_agg()`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct KeyAggContext {
     /// The aggregate public key `Q` (combined point).
     pub aggregate_key: AffinePoint,
@@ -32,6 +32,16 @@ pub struct KeyAggContext {
     pub(crate) pubkeys: Vec<[u8; 33]>,
     /// Parity flag for the aggregate key (for x-only compatibility).
     pub(crate) parity: bool,
+}
+
+impl core::fmt::Debug for KeyAggContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("KeyAggContext")
+            .field("x_only_pubkey", &hex::encode(self.x_only_pubkey))
+            .field("coefficients", &"[REDACTED]")
+            .field("num_keys", &self.pubkeys.len())
+            .finish()
+    }
 }
 
 /// A public nonce pair (2 points, each 33 bytes SEC1 compressed).
