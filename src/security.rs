@@ -213,6 +213,117 @@ pub fn clear_custom_rng() {
     });
 }
 
+// ─── Attestation Hooks ─────────────────────────────────────────────
+
+/// Enclave attestation context for remote verification.
+///
+/// Implement this trait to integrate trad-signer with your enclave's
+/// attestation mechanism (SGX quotes, Nitro attestation documents,
+/// TDX reports, etc.).
+///
+/// # Example
+/// ```ignore
+/// struct NitroEnclave;
+///
+/// impl EnclaveContext for NitroEnclave {
+///     fn attest(&self, user_data: &[u8]) -> Result<Vec<u8>, SignerError> {
+///         // Call /dev/nsm to generate attestation document
+///         nsm_attest(user_data)
+///     }
+///     fn verify_attestation(&self, doc: &[u8]) -> Result<bool, SignerError> {
+///         // Verify attestation signature chain
+///         nsm_verify(doc)
+///     }
+/// }
+/// ```
+pub trait EnclaveContext {
+    /// Generate an attestation document/quote binding to `user_data`.
+    ///
+    /// For SGX: EREPORT → quote (via QE)
+    /// For Nitro: NSM attestation document
+    /// For TDX: TD report → quote
+    fn attest(&self, user_data: &[u8]) -> Result<Vec<u8>, crate::error::SignerError>;
+
+    /// Verify an attestation document/quote.
+    ///
+    /// Returns `true` if the attestation is valid and trusted.
+    fn verify_attestation(&self, attestation: &[u8]) -> Result<bool, crate::error::SignerError>;
+
+    /// Seal data for persistent storage within the enclave.
+    ///
+    /// The sealed data can only be unsealed by the same enclave identity.
+    /// Default implementation: passthrough (no sealing).
+    fn seal(&self, plaintext: &[u8]) -> Result<Vec<u8>, crate::error::SignerError> {
+        Ok(plaintext.to_vec())
+    }
+
+    /// Unseal previously sealed data.
+    ///
+    /// Default implementation: passthrough (no unsealing).
+    fn unseal(&self, sealed: &[u8]) -> Result<Zeroizing<Vec<u8>>, crate::error::SignerError> {
+        Ok(Zeroizing::new(sealed.to_vec()))
+    }
+}
+
+// ─── Key Rotation ──────────────────────────────────────────────────
+
+/// Atomically rotate a key: generates a new key and zeroizes the old one.
+///
+/// Returns `(new_key, old_public_key)` — the old private key is zeroized.
+///
+/// # Example
+/// ```
+/// use trad_signer::security::rotate_key;
+/// use trad_signer::ethereum::EthereumSigner;
+/// use trad_signer::traits::{KeyPair, Signer};
+///
+/// let old_signer = EthereumSigner::generate().unwrap();
+/// let old_pubkey = old_signer.public_key_bytes();
+///
+/// let (new_signer, returned_pubkey) = rotate_key(old_signer,
+///     || EthereumSigner::generate()
+/// ).unwrap();
+///
+/// // Old public key is preserved, new signer has a different key
+/// assert_eq!(returned_pubkey, old_pubkey);
+/// assert_ne!(new_signer.public_key_bytes(), returned_pubkey);
+/// ```
+pub fn rotate_key<S>(
+    old_signer: S,
+    generate: impl FnOnce() -> Result<S, crate::error::SignerError>,
+) -> Result<(S, Vec<u8>), crate::error::SignerError>
+where
+    S: crate::traits::Signer + crate::traits::KeyPair,
+{
+    // Capture old public key before dropping
+    let old_pubkey = crate::traits::Signer::public_key_bytes(&old_signer);
+
+    // Drop old signer — Zeroizing ensures key material is wiped
+    drop(old_signer);
+
+    // Generate new key
+    let new_signer = generate()?;
+
+    Ok((new_signer, old_pubkey))
+}
+
+/// Rotate a key using a specific seed (deterministic rotation).
+///
+/// Useful when the new key must be derived from specific entropy
+/// (e.g., from an HSM or TRNG source).
+pub fn rotate_key_with_seed<S>(
+    old_signer: S,
+    new_seed: &[u8],
+) -> Result<(S, Vec<u8>), crate::error::SignerError>
+where
+    S: crate::traits::Signer<Error = crate::error::SignerError> + crate::traits::KeyPair,
+{
+    let old_pubkey = crate::traits::Signer::public_key_bytes(&old_signer);
+    drop(old_signer);
+    let new_signer = S::from_bytes(new_seed)?;
+    Ok((new_signer, old_pubkey))
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]

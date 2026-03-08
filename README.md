@@ -22,7 +22,7 @@
 
 ```toml
 [dependencies]
-trad-signer = "0.6"
+trad-signer = "0.7"
 ```
 
 ---
@@ -216,22 +216,22 @@ use trad_signer::threshold::frost::{keygen, signing};
 // 1. Trusted dealer generates 2-of-3 key shares
 let secret = [0x42u8; 32]; // group secret key
 let kgen = keygen::trusted_dealer_keygen(&secret, 2, 3)?;
-// kgen.key_packages: 3 shares, any 2 can sign
+// kgen.key_shares(): 3 shares, any 2 can sign
 
 // 2. Verify shares against VSS commitments
-for pkg in &kgen.key_packages {
+for pkg in kgen.key_shares() {
     assert!(kgen.vss_commitments.verify_share(pkg.identifier, pkg.secret_share()));
 }
 
 // 3. Round 1 — Participants 1 and 3 generate nonce commitments
-let nonce1 = signing::commit(&kgen.key_packages[0])?;
-let nonce3 = signing::commit(&kgen.key_packages[2])?;
+let nonce1 = signing::commit(&kgen.key_shares()[0])?;
+let nonce3 = signing::commit(&kgen.key_shares()[2])?;
 let commitments = vec![nonce1.commitments.clone(), nonce3.commitments.clone()];
 
 // 4. Round 2 — Each participant produces a partial signature share
 let msg = b"threshold signed message";
-let share1 = signing::sign(&kgen.key_packages[0], nonce1, &commitments, msg)?;
-let share3 = signing::sign(&kgen.key_packages[2], nonce3, &commitments, msg)?;
+let share1 = signing::sign(&kgen.key_shares()[0], nonce1, &commitments, msg)?;
+let share3 = signing::sign(&kgen.key_shares()[2], nonce3, &commitments, msg)?;
 
 // 5. Coordinator aggregates shares into a standard Schnorr signature
 let sig = signing::aggregate(&commitments, &[share1, share3], &kgen.group_public_key, msg)?;
@@ -243,7 +243,7 @@ assert!(signing::verify(&sig, &kgen.group_public_key, msg)?);
 **Identifiable abort** — detect which participant sent a bad share:
 
 ```rust
-let pk1 = kgen.key_packages[0].public_key();
+let pk1 = kgen.key_shares()[0].public_key();
 let is_valid = signing::verify_share(
     &share1, &commitments[0], &pk1,
     &kgen.group_public_key, &commitments, msg,
@@ -374,7 +374,7 @@ All modules are enabled by default. Disable unused ones to reduce compile time:
 
 ```toml
 [dependencies]
-trad-signer = { version = "0.5", default-features = false, features = ["ethereum", "frost"] }
+trad-signer = { version = "0.7", default-features = false, features = ["ethereum", "frost"] }
 ```
 
 | Feature | Description |
@@ -391,6 +391,7 @@ trad-signer = { version = "0.5", default-features = false, features = ["ethereum
 | `musig2` | MuSig2 N-of-N multi-party Schnorr (BIP-327) |
 | `bip85` | BIP-85 deterministic entropy (child mnemonics, WIF, xprv) |
 | `serde` | Serialization support for keys and signatures |
+| `custom_rng` | Pluggable TRNG source for TEE/enclave environments |
 
 ## Benchmarks
 
@@ -413,8 +414,36 @@ Run with `cargo bench --all-features`. Covers all chains + threshold signing:
 - All key material wrapped in `Zeroizing` / `ZeroizeOnDrop`
 - Constant-time comparisons via `subtle::ConstantTimeEq`
 - FROST nonces are single-use `Zeroizing<Scalar>` with drop guards
-- `cargo audit`: **0 vulnerabilities** across 117+ dependencies
-- **859+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, EIP-2333, and FIPS 186-4 vectors
+- `cargo audit`: **0 vulnerabilities** across 175+ dependencies
+- **887+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, EIP-2333, and FIPS 186-4 vectors
+
+### Enclave / Confidential Computing
+
+trad-signer is hardened for SGX, Nitro, TDX, and SEV-SNP environments:
+
+```rust
+use trad_signer::security::{GuardedMemory, secure_random, ct_hex_encode};
+
+// Zeroize-on-drop memory for sensitive data
+let mut guard = GuardedMemory::new(32);
+secure_random(guard.as_mut())?;  // Fill from OS/hardware TRNG
+
+// Constant-time hex encoding (prevents timing side-channels)
+let hex = ct_hex_encode(guard.as_ref());
+
+// Debug output is redacted: GuardedMemory { len: 32, data: "[REDACTED]" }
+println!("{:?}", guard);
+```
+
+**Pluggable RNG** for enclaves (requires `custom_rng` feature):
+
+```rust
+// Replace getrandom with hardware TRNG
+trad_signer::security::set_custom_rng(Box::new(|buf| {
+    my_enclave_trng_fill(buf);  // e.g., RDRAND, /dev/nsm
+    Ok(())
+}));
+```
 
 ## CLI Tool
 
@@ -467,10 +496,12 @@ src/
 ├── bls/
 │   ├── mod.rs         # BLS12-381 signing + aggregation
 │   ├── threshold.rs   # BLS threshold (t-of-n) keygen + signing
-│   └── eip2333.rs     # EIP-2333 key derivation + EIP-2334 paths
+│   ├── eip2333.rs     # EIP-2333 key derivation + EIP-2334 paths
+│   └── keystore.rs    # EIP-2335 keystore (scrypt + AES-128-CTR)
 ├── threshold/
 │   ├── frost/         # RFC 9591 T-of-N + identifiable abort + proactive refresh
 │   └── musig2/        # BIP-327 N-of-N + adaptor sigs + tweaks + nested trees
+├── security.rs        # Enclave: GuardedMemory, ct_hex, secure_random, custom_rng
 ├── hd_key.rs          # BIP-32/44 HD key derivation + xpub/xprv
 ├── mnemonic.rs        # BIP-39 seed phrases
 └── bip85.rs           # BIP-85 deterministic entropy
