@@ -1,7 +1,12 @@
 //! Ethereum ECDSA signer using secp256k1 + Keccak-256.
 //!
 //! Implements EIP-2 Low-S normalization, recovery ID (v, r, s),
-//! and Ethereum address derivation.
+//! Ethereum address derivation, EIP-155/191/712 signing, and
+//! typed transaction encoding (EIP-2718/2930/1559/4844).
+
+pub mod rlp;
+pub mod transaction;
+pub mod siwe;
 
 use crate::error::SignerError;
 use crate::traits;
