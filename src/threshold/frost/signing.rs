@@ -56,6 +56,7 @@ pub struct SignatureShare {
 
 /// A FROST Schnorr signature (compressed point R || scalar s).
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FrostSignature {
     /// The group commitment point R (33 bytes, SEC1 compressed).
     pub r_bytes: Vec<u8>,

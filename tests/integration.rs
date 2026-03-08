@@ -185,3 +185,135 @@ mod trait_consistency {
         assert_eq!(neo.public_key_bytes().len(), 33);
     }
 }
+
+// ─── Mnemonic → HD → Multi-Chain Signing Workflow ───────────────
+
+#[cfg(all(feature = "mnemonic", feature = "ethereum", feature = "bitcoin", feature = "solana"))]
+mod mnemonic_multichaain {
+    use trad_signer::mnemonic::Mnemonic;
+    use trad_signer::hd_key::{ExtendedPrivateKey, DerivationPath};
+    use trad_signer::ethereum::EthereumSigner;
+    use trad_signer::bitcoin::BitcoinSigner;
+    use trad_signer::solana::SolanaSigner;
+    use trad_signer::traits::{KeyPair, Signer, Verifier};
+
+    /// Full workflow: generate mnemonic → derive HD keys → sign on ETH, BTC, SOL
+    #[test]
+    fn test_mnemonic_to_all_chains() {
+        let entropy = hex::decode("7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f").unwrap();
+        let mnemonic = Mnemonic::from_entropy(&entropy).unwrap();
+        let seed = mnemonic.to_seed("");
+        let master = ExtendedPrivateKey::from_seed(&*seed).unwrap();
+
+        // ETH: m/44'/60'/0'/0/0
+        let eth_key = master.derive_path(&DerivationPath::ethereum(0)).unwrap();
+        let eth_signer = EthereumSigner::from_bytes(&eth_key.private_key_bytes()).unwrap();
+        let eth_sig = eth_signer.sign(b"cross-chain test").unwrap();
+        let eth_verifier = trad_signer::ethereum::EthereumVerifier::from_public_key_bytes(
+            &eth_signer.public_key_bytes(),
+        ).unwrap();
+        assert!(eth_verifier.verify(b"cross-chain test", &eth_sig).unwrap());
+
+        // BTC: m/84'/0'/0'/0/0
+        let btc_key = master.derive_path(&DerivationPath::bitcoin_segwit(0)).unwrap();
+        let btc_signer = BitcoinSigner::from_bytes(&btc_key.private_key_bytes()).unwrap();
+        let btc_addr = btc_signer.p2wpkh_address().unwrap();
+        assert!(btc_addr.starts_with("bc1q"));
+
+        // SOL: m/44'/501'/0'/0'
+        let sol_key = master.derive_path(&DerivationPath::solana(0)).unwrap();
+        assert_eq!(sol_key.private_key_bytes().len(), 32);
+
+        // All chains should use different derivation paths → different privkeys
+        assert_ne!(&*eth_key.private_key_bytes(), &*btc_key.private_key_bytes());
+        assert_ne!(&*btc_key.private_key_bytes(), &*sol_key.private_key_bytes());
+    }
+}
+
+#[cfg(all(feature = "bip85", feature = "mnemonic", feature = "bitcoin"))]
+mod bip85_workflow {
+    use trad_signer::hd_key::ExtendedPrivateKey;
+    use trad_signer::bip85;
+    use trad_signer::bitcoin::BitcoinSigner;
+    use trad_signer::traits::{KeyPair, Signer};
+
+    /// BIP-85: master → derive WIF → create BTC signer → sign
+    #[test]
+    fn test_bip85_deterministic_key_derivation() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+
+        // Derive WIF private key via BIP-85
+        let wif = bip85::derive_wif(&master, 0).unwrap();
+        assert!(wif.starts_with('K') || wif.starts_with('L'));
+
+        // Derive a child xprv via BIP-85
+        let child_xprv = bip85::derive_xprv(&master, 0).unwrap();
+        let btc_signer = BitcoinSigner::from_bytes(&child_xprv.private_key_bytes()).unwrap();
+        let sig = btc_signer.sign(b"BIP-85 derived signing").unwrap();
+        assert!(!sig.der_bytes.is_empty());
+
+        // Deterministic: same master → same child xprv → same address
+        let child_xprv_2 = bip85::derive_xprv(&master, 0).unwrap();
+        assert_eq!(&*child_xprv.private_key_bytes(), &*child_xprv_2.private_key_bytes());
+
+        // Different index → different key
+        let child_xprv_1 = bip85::derive_xprv(&master, 1).unwrap();
+        assert_ne!(&*child_xprv.private_key_bytes(), &*child_xprv_1.private_key_bytes());
+    }
+}
+
+#[cfg(all(feature = "frost", feature = "musig2"))]
+mod threshold_e2e {
+    use trad_signer::threshold::frost::{keygen, signing};
+    use trad_signer::threshold::musig2::signing as musig2;
+
+    /// Full FROST keygen → sign → verify → different-subset
+    #[test]
+    fn test_frost_full_e2e_with_subset_rotation() {
+        let secret = [0x33u8; 32];
+        let kgen = keygen::trusted_dealer_keygen(&secret, 2, 3).unwrap();
+        let group_pk = kgen.group_public_key;
+        let msg = b"threshold e2e test";
+
+        // Sign with participants {1, 2}
+        let n1 = signing::commit(&kgen.key_packages[0]).unwrap();
+        let n2 = signing::commit(&kgen.key_packages[1]).unwrap();
+        let comms_12 = vec![n1.commitments.clone(), n2.commitments.clone()];
+        let s1 = signing::sign(&kgen.key_packages[0], n1, &comms_12, msg).unwrap();
+        let s2 = signing::sign(&kgen.key_packages[1], n2, &comms_12, msg).unwrap();
+        let sig_12 = signing::aggregate(&comms_12, &[s1, s2], &group_pk, msg).unwrap();
+        assert!(signing::verify(&sig_12, &group_pk, msg).unwrap());
+
+        // Sign with participants {2, 3}
+        let n2b = signing::commit(&kgen.key_packages[1]).unwrap();
+        let n3 = signing::commit(&kgen.key_packages[2]).unwrap();
+        let comms_23 = vec![n2b.commitments.clone(), n3.commitments.clone()];
+        let s2b = signing::sign(&kgen.key_packages[1], n2b, &comms_23, msg).unwrap();
+        let s3 = signing::sign(&kgen.key_packages[2], n3, &comms_23, msg).unwrap();
+        let sig_23 = signing::aggregate(&comms_23, &[s2b, s3], &group_pk, msg).unwrap();
+        assert!(signing::verify(&sig_23, &group_pk, msg).unwrap());
+
+        // Both sigs must verify against same group key, but R will differ
+        assert_ne!(sig_12.r_bytes, sig_23.r_bytes);
+    }
+
+    /// Full MuSig2 keygen → sign → verify
+    #[test]
+    fn test_musig2_full_e2e() {
+        let sk1 = [0x11u8; 32];
+        let sk2 = [0x22u8; 32];
+        let pk1 = musig2::individual_pubkey(&sk1).unwrap();
+        let pk2 = musig2::individual_pubkey(&sk2).unwrap();
+        let ctx = musig2::key_agg(&[pk1, pk2]).unwrap();
+        let msg = b"musig2 e2e test";
+
+        let (sn1, pn1) = musig2::nonce_gen(&sk1, &pk1, &ctx, msg, &[]).unwrap();
+        let (sn2, pn2) = musig2::nonce_gen(&sk2, &pk2, &ctx, msg, &[]).unwrap();
+        let agg_nonce = musig2::nonce_agg(&[pn1, pn2]).unwrap();
+        let ps1 = musig2::sign(sn1, &sk1, &ctx, &agg_nonce, msg).unwrap();
+        let ps2 = musig2::sign(sn2, &sk2, &ctx, &agg_nonce, msg).unwrap();
+        let sig = musig2::partial_sig_agg(&[ps1, ps2], &agg_nonce, &ctx, msg).unwrap();
+        assert!(musig2::verify(&sig, &ctx.x_only_pubkey, msg).unwrap());
+    }
+}

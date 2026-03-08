@@ -10,6 +10,7 @@ use zeroize::Zeroizing;
 
 /// XRP signature (variable format depending on key type).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct XrpSignature {
     /// DER-encoded for ECDSA, 64-byte for Ed25519.
     pub bytes: Vec<u8>,
@@ -287,7 +288,7 @@ impl traits::Signer for XrpEddsaSigner {
     }
 
     /// **Note:** Ed25519 hashes internally per RFC 8032. This method is identical to
-    /// [`sign()`](Self::sign) — the `digest` parameter is treated as a raw message, not a
+    /// `sign()` — the `digest` parameter is treated as a raw message, not a
     /// pre-computed hash. For consistency with the `Signer` trait, this is provided as-is.
     fn sign_prehashed(&self, digest: &[u8]) -> Result<XrpSignature, SignerError> {
         // Ed25519 has no internal hashing step in XRP context,

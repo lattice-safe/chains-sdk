@@ -21,6 +21,7 @@ use zeroize::Zeroizing;
 
 /// A Bitcoin ECDSA signature in DER encoding.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitcoinSignature {
     /// DER-encoded signature bytes.
     pub der_bytes: Vec<u8>,

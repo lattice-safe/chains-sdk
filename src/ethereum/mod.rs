@@ -12,6 +12,7 @@ use zeroize::Zeroizing;
 
 /// An Ethereum ECDSA signature with recovery ID.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EthereumSignature {
     /// The R component (32 bytes).
     pub r: [u8; 32],

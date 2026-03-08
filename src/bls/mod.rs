@@ -103,7 +103,7 @@ impl traits::Signer for BlsSigner {
     }
 
     /// **Note:** BLS uses hash-to-curve (H2C) internally. This method is identical to
-    /// [`sign()`](Self::sign) — the `digest` parameter is treated as a raw message, not a
+    /// `sign()` — the `digest` parameter is treated as a raw message, not a
     /// pre-computed hash. For consistency with the `Signer` trait, this is provided as-is.
     fn sign_prehashed(&self, digest: &[u8]) -> Result<BlsSignature, SignerError> {
         // BLS hash-to-curve means there's no external pre-hashing.

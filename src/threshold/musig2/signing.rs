@@ -90,6 +90,7 @@ pub struct PartialSignature {
 
 /// A final MuSig2 Schnorr signature (64 bytes: x(R) || s).
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MuSig2Signature {
     /// 32-byte x-coordinate of R.
     pub r: [u8; 32],
