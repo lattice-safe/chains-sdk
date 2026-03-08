@@ -492,6 +492,37 @@ impl ExtendedPublicKey {
         }
         Ok(Self { key, chain_code, depth, parent_fingerprint, child_index })
     }
+
+    /// Derive a **P2WPKH** (SegWit) address from this public key.
+    ///
+    /// Uses Bech32 encoding: `bc1q...` for mainnet.
+    ///
+    /// # Arguments
+    /// - `hrp` — Human-readable part: `"bc"` for mainnet, `"tb"` for testnet
+    #[cfg(feature = "bitcoin")]
+    pub fn p2wpkh_address(&self, hrp: &str) -> Result<String, SignerError> {
+        let pubkey_hash = crypto::hash160(&self.key);
+        crate::bitcoin::bech32_encode(hrp, 0, &pubkey_hash)
+    }
+
+    /// Derive a **P2TR** (Taproot) address from this public key.
+    ///
+    /// Extracts the x-only public key (drops the prefix byte) and encodes
+    /// as a Bech32m `bc1p...` address.
+    ///
+    /// # Arguments
+    /// - `hrp` — Human-readable part: `"bc"` for mainnet, `"tb"` for testnet
+    #[cfg(feature = "bitcoin")]
+    pub fn p2tr_address(&self, hrp: &str) -> Result<String, SignerError> {
+        // x-only = drop the 0x02/0x03 prefix from compressed key
+        if self.key.len() != 33 {
+            return Err(SignerError::InvalidPublicKey(
+                "expected 33-byte compressed key".into(),
+            ));
+        }
+        let x_only = &self.key[1..33];
+        crate::bitcoin::bech32_encode(hrp, 1, x_only)
+    }
 }
 
 /// A single step in a BIP-32 derivation path.
@@ -1014,5 +1045,64 @@ mod tests {
         let mut bad = String::from("ypub");
         bad.push_str(&xpub[4..]);
         assert!(ExtendedPublicKey::from_xpub(&bad).is_err());
+    }
+
+    #[cfg(feature = "bitcoin")]
+    #[test]
+    fn test_extended_public_key_p2wpkh_address() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+        let addr = pubkey.p2wpkh_address("bc").unwrap();
+        assert!(addr.starts_with("bc1q"), "P2WPKH should start with bc1q: {addr}");
+    }
+
+    #[cfg(feature = "bitcoin")]
+    #[test]
+    fn test_extended_public_key_p2tr_address() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+        let addr = pubkey.p2tr_address("bc").unwrap();
+        assert!(addr.starts_with("bc1p"), "P2TR should start with bc1p: {addr}");
+    }
+
+    #[cfg(feature = "bitcoin")]
+    #[test]
+    fn test_extended_public_key_derived_addresses_differ() {
+        let seed = [0xABu8; 64];
+        let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let pubkey = master.to_extended_public_key().unwrap();
+        let c0 = pubkey.derive_child_normal(0).unwrap();
+        let c1 = pubkey.derive_child_normal(1).unwrap();
+        assert_ne!(
+            c0.p2wpkh_address("bc").unwrap(),
+            c1.p2wpkh_address("bc").unwrap(),
+        );
+    }
+
+    #[cfg(feature = "bitcoin")]
+    #[test]
+    fn test_parse_unsigned_tx_roundtrip() {
+        use crate::bitcoin::transaction::*;
+        let mut tx = Transaction::new(2);
+        tx.inputs.push(TxIn {
+            previous_output: OutPoint { txid: [0xAA; 32], vout: 0 },
+            script_sig: vec![],
+            sequence: 0xFFFFFFFF,
+        });
+        tx.outputs.push(TxOut {
+            value: 50_000,
+            script_pubkey: vec![0x00, 0x14, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+                0xBB, 0xBB, 0xBB, 0xBB],
+        });
+        let raw = tx.serialize_legacy();
+        let parsed = parse_unsigned_tx(&raw).unwrap();
+        assert_eq!(parsed.version, 2);
+        assert_eq!(parsed.inputs.len(), 1);
+        assert_eq!(parsed.outputs.len(), 1);
+        assert_eq!(parsed.outputs[0].value, 50_000);
+        assert_eq!(parsed.locktime, 0);
     }
 }

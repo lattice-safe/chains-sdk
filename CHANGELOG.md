@@ -1,57 +1,36 @@
 # Changelog
 
-## [0.3.0] — 2026-03-08
+## [0.5.0] — 2026-03-08
 
-### Added
+### ⚠ Breaking Changes
+- `to_wif()` now returns `Zeroizing<String>` instead of `String`
+- `to_xprv()` now returns `Zeroizing<String>` instead of `String`
 
-**Address Generation**
-- Ethereum: `address_checksum()` (EIP-55), `eip55_checksum()`
-- Bitcoin: `p2pkh_address()`, `p2wpkh_address()`, `p2tr_address()` (Schnorr)
-- Solana: `address()` (Base58 Ed25519 pubkey)
-- XRP: `address()` for both ECDSA and Ed25519 signers
-- NEO: `address()`, `script_hash()`
+### Added — Round 3
+- **BIP-322 Verification**: `verify_simple_p2wpkh()` and `verify_simple_p2tr()` counterparts to the signing functions
+- **PSBT Signing**: `Psbt::sign_segwit_input()` for P2WPKH and `Psbt::sign_taproot_input()` for P2TR — auto-compute sighash and store signatures
+- **Taproot Address from xpub**: `ExtendedPublicKey::p2tr_address()` and `p2wpkh_address()` for watch-only address derivation
+- **Transaction Parser**: `parse_unsigned_tx()` — deserialize raw unsigned transactions
 
-**Address Validation**
-- Ethereum: `validate_address()` (hex format + EIP-55 checksum)
-- Bitcoin: `validate_address()`, `validate_mainnet_address()`, `validate_testnet_address()`
-- Solana: `validate_address()` (Base58 32-byte check)
-- XRP: `validate_address()` (r-address checksum)
-- NEO: `validate_address()` (A-address checksum)
+### Added — Round 2
+- **BIP-342**: `taproot_script_path_sighash()` — script-path spending with tapleaf hash, key_version, codesep_pos
+- **ExtendedPublicKey Tests**: 10 dedicated tests (derivation consistency, xpub round-trip, chain derivation)
+- **Fuzz Targets**: 4 targets (`fuzz_from_wif`, `fuzz_from_xprv`, `fuzz_psbt_deserialize`, `fuzz_mnemonic_from_phrase`)
 
-**Signing**
-- Ethereum: `ecrecover()`, `ecrecover_digest()` — recover signer from signature
-- Ethereum: `sign_with_chain_id()`, `sign_digest_with_chain_id()` — EIP-155 replay protection
-- Ethereum: `personal_sign_with_chain_id()` — EIP-191 + EIP-155
-- Bitcoin: `sign_message()`, `bitcoin_message_hash()` — BIP-137 message signing
+### Added — Round 1
+- **Transaction Builder**: `transaction.rs` with legacy + SegWit serialization, txid, wtxid, vsize
+- **BIP-143/341 Sighash**: `sighash.rs` with `segwit_v0_sighash()` and `taproot_key_path_sighash()`
+- **BIP-322 Signing**: `sign_simple_p2wpkh()` and `sign_simple_p2tr()`
+- **ExtendedPublicKey**: xpub serialization, normal child derivation, BIP-32 public key derivation
+- **PSBT Parser**: `Psbt::deserialize()` with BIP-371 Taproot extensions
+- **Doc-tests**: Converted 10 `ignore` examples to `no_run`
 
-**Testnet Addresses**
-- Bitcoin: `p2pkh_testnet_address()` (m/n...), `p2wpkh_testnet_address()` (tb1q...)
-- Schnorr: `p2tr_testnet_address()` (tb1p...)
+### Fixed
+- All clippy warnings resolved (0 warnings across all targets)
+- `#[must_use]` on 10+ functions
+- Constant-time checksum comparisons via `subtle`
+- `div_ceil` migration from manual to std
 
-**BIP-39 Mnemonic**
-- `Mnemonic::generate(word_count)` — 12/15/18/21/24 words
-- `Mnemonic::from_entropy()` — from raw entropy bytes
-- `Mnemonic::from_phrase()` — parse + validate checksum
-- `Mnemonic::to_seed(passphrase)` — PBKDF2-SHA512
+## [0.4.0]
 
-**BIP-32**
-- `ExtendedPrivateKey::to_xprv()` — Base58Check serialization
-- `ExtendedPrivateKey::to_xpub()` — public key serialization
-- `ExtendedPrivateKey::from_xprv()` — deserialization + validation
-
-### Dependencies
-- Added: `bs58` v0.5, `bech32` v0.11, `pbkdf2` v0.12
-- Added: `ripemd` to `bitcoin` and `neo` features
-
-### Tests
-- 216+ tests across lib, address, integration, SDK features, and serde suites
-- BIP-39 official test vectors (entropy → phrase, phrase → seed)
-- BIP-32 known vector: privkey=1 → P2PKH 1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH
-- EIP-55 spec vectors, ecrecover round-trips
-
-## [0.2.0] — 2026-03-07
-
-### Added
-- Initial release: 6 chain signers + BLS + HD key derivation
-- Full serde support
-- Security hardening: forbid(unsafe), deny(unwrap/expect/panic), zeroize
+Initial release with multi-chain signing support.

@@ -195,6 +195,94 @@ impl Transaction {
     }
 }
 
+/// Parse a raw unsigned transaction (no witness) into a `Transaction` struct.
+///
+/// This is the inverse of `Transaction::serialize_legacy()`. Used by the PSBT
+/// signer to reconstruct the transaction for sighash computation.
+pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::SignerError> {
+    use crate::error::SignerError;
+
+    let mut off;
+
+    // version (4 bytes LE)
+    if data.len() < 4 {
+        return Err(SignerError::ParseError("tx too short for version".into()));
+    }
+    let version = i32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    off = 4;
+
+    // input count
+    let input_count = encoding::read_compact_size(data, &mut off)? as usize;
+
+    let mut inputs = Vec::with_capacity(input_count);
+    for _ in 0..input_count {
+        if off + 36 > data.len() {
+            return Err(SignerError::ParseError("tx truncated in input outpoint".into()));
+        }
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(&data[off..off + 32]);
+        off += 32;
+        let vout = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+        off += 4;
+
+        let script_len = encoding::read_compact_size(data, &mut off)? as usize;
+        if off + script_len > data.len() {
+            return Err(SignerError::ParseError("tx truncated in scriptSig".into()));
+        }
+        let script_sig = data[off..off + script_len].to_vec();
+        off += script_len;
+
+        if off + 4 > data.len() {
+            return Err(SignerError::ParseError("tx truncated in sequence".into()));
+        }
+        let sequence = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+        off += 4;
+
+        inputs.push(TxIn {
+            previous_output: OutPoint { txid, vout },
+            script_sig,
+            sequence,
+        });
+    }
+
+    // output count
+    let output_count = encoding::read_compact_size(data, &mut off)? as usize;
+
+    let mut outputs = Vec::with_capacity(output_count);
+    for _ in 0..output_count {
+        if off + 8 > data.len() {
+            return Err(SignerError::ParseError("tx truncated in output value".into()));
+        }
+        let mut val_bytes = [0u8; 8];
+        val_bytes.copy_from_slice(&data[off..off + 8]);
+        let value = u64::from_le_bytes(val_bytes);
+        off += 8;
+
+        let spk_len = encoding::read_compact_size(data, &mut off)? as usize;
+        if off + spk_len > data.len() {
+            return Err(SignerError::ParseError("tx truncated in scriptPubKey".into()));
+        }
+        let script_pubkey = data[off..off + spk_len].to_vec();
+        off += spk_len;
+
+        outputs.push(TxOut { value, script_pubkey });
+    }
+
+    // locktime (4 bytes LE)
+    if off + 4 > data.len() {
+        return Err(SignerError::ParseError("tx truncated in locktime".into()));
+    }
+    let locktime = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+
+    Ok(Transaction {
+        version,
+        inputs,
+        outputs,
+        witnesses: Vec::new(),
+        locktime,
+    })
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]

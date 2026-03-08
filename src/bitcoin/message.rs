@@ -282,6 +282,121 @@ pub fn sign_simple_p2tr(
     Ok(tx.serialize_witness())
 }
 
+// ─── BIP-322 Simple Verification ──────────────────────────────────
+
+/// BIP-322 "simple" verification for P2WPKH proofs.
+///
+/// Verifies a BIP-322 proof by:
+/// 1. Deriving the P2WPKH scriptPubKey from the provided pubkey via hash160
+/// 2. Rebuilding the `to_spend` virtual transaction
+/// 3. Recomputing the BIP-143 sighash for the `to_sign` input
+/// 4. Verifying the ECDSA signature against the pubkey
+///
+/// # Arguments
+/// - `pubkey` — Compressed public key (33 bytes)
+/// - `message` — The original signed message
+/// - `signature` — DER-encoded ECDSA signature (without sighash byte)
+pub fn verify_simple_p2wpkh(
+    pubkey: &[u8; 33],
+    message: &[u8],
+    signature: &[u8],
+) -> Result<bool, crate::error::SignerError> {
+    use super::transaction::*;
+    use super::sighash;
+    use super::tapscript::SighashType;
+
+    let pubkey_hash = crypto::hash160(pubkey);
+    let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
+
+    // Rebuild to_spend and its txid
+    let to_spend = create_to_spend_tx(&script_pk, message);
+    let to_spend_txid = compute_txid(&to_spend);
+
+    // Rebuild to_sign tx
+    let mut tx = Transaction::new(0);
+    let mut txid_internal = to_spend_txid;
+    txid_internal.reverse();
+    tx.inputs.push(TxIn {
+        previous_output: OutPoint { txid: txid_internal, vout: 0 },
+        script_sig: vec![],
+        sequence: 0,
+    });
+    tx.outputs.push(TxOut {
+        value: 0,
+        script_pubkey: vec![0x6a],
+    });
+
+    // Recompute the sighash
+    let script_code = sighash::p2wpkh_script_code(&pubkey_hash);
+    let prev_out = sighash::PrevOut {
+        script_code,
+        value: 0,
+    };
+    let sighash_value = sighash::segwit_v0_sighash(&tx, 0, &prev_out, SighashType::All)?;
+
+    // Verify the ECDSA signature
+    let verifier = super::BitcoinVerifier::from_public_key_bytes(pubkey)?;
+    use crate::traits::Verifier;
+    verifier.verify_prehashed(&sighash_value, &super::BitcoinSignature::from_bytes(signature)?)
+}
+
+/// BIP-322 "simple" verification for P2TR (Taproot) proofs.
+///
+/// Verifies a BIP-322 proof by:
+/// 1. Deriving the P2TR scriptPubKey from the x-only public key
+/// 2. Rebuilding the `to_spend` virtual transaction
+/// 3. Recomputing the BIP-341 Taproot sighash
+/// 4. Verifying the Schnorr signature against the x-only pubkey
+///
+/// # Arguments
+/// - `x_only_pubkey` — 32-byte x-only public key
+/// - `message` — The original signed message
+/// - `signature` — 64-byte BIP-340 Schnorr signature
+pub fn verify_simple_p2tr(
+    x_only_pubkey: &[u8; 32],
+    message: &[u8],
+    signature: &[u8; 64],
+) -> Result<bool, crate::error::SignerError> {
+    use super::transaction::*;
+    use super::sighash;
+    use super::tapscript::SighashType;
+
+    let script_pk = p2tr_script_pubkey(x_only_pubkey);
+
+    // Rebuild to_spend and its txid
+    let to_spend = create_to_spend_tx(&script_pk, message);
+    let to_spend_txid = compute_txid(&to_spend);
+
+    // Rebuild to_sign tx
+    let mut tx = Transaction::new(0);
+    let mut txid_internal = to_spend_txid;
+    txid_internal.reverse();
+    tx.inputs.push(TxIn {
+        previous_output: OutPoint { txid: txid_internal, vout: 0 },
+        script_sig: vec![],
+        sequence: 0,
+    });
+    tx.outputs.push(TxOut {
+        value: 0,
+        script_pubkey: vec![0x6a],
+    });
+
+    // Recompute BIP-341 sighash
+    let prevouts = vec![TxOut {
+        value: 0,
+        script_pubkey: script_pk,
+    }];
+    let sighash_value = sighash::taproot_key_path_sighash(
+        &tx, 0, &prevouts, SighashType::Default,
+    )?;
+
+    // Verify the Schnorr signature
+    let verifier = super::schnorr::SchnorrVerifier::from_public_key_bytes(x_only_pubkey)?;
+    let schnorr_sig = super::schnorr::SchnorrSignature { bytes: *signature };
+    use crate::traits::Verifier;
+    verifier.verify(&sighash_value, &schnorr_sig)
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -409,5 +524,93 @@ mod tests {
         let to_sign = create_to_sign_tx(&txid);
         // to_sign should reference the txid
         assert!(to_sign.windows(32).any(|w| w == txid));
+    }
+
+    #[test]
+    fn test_bip322_sign_verify_p2wpkh_roundtrip() {
+        use crate::traits::{KeyPair, Signer};
+        let signer = super::super::BitcoinSigner::generate().unwrap();
+        let message = b"BIP-322 P2WPKH test";
+
+        // Sign
+        let proof = sign_simple_p2wpkh(&signer, message).unwrap();
+        assert!(!proof.is_empty());
+
+        // Extract signature from the proof (witness-serialized to_sign tx)
+        // The signature is in the witness: [sig+sighash_byte, pubkey]
+        let pubkey_bytes = signer.public_key_bytes();
+        let mut pubkey33 = [0u8; 33];
+        pubkey33.copy_from_slice(&pubkey_bytes);
+
+        // Sign again to get the raw sig for verification
+        let sig = {
+            let pubkey_hash = crypto::hash160(&pubkey33);
+            let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
+            let to_spend = create_to_spend_tx(&script_pk, message);
+            let to_spend_txid = compute_txid(&to_spend);
+            let mut tx = super::super::transaction::Transaction::new(0);
+            let mut txid_internal = to_spend_txid;
+            txid_internal.reverse();
+            tx.inputs.push(super::super::transaction::TxIn {
+                previous_output: super::super::transaction::OutPoint { txid: txid_internal, vout: 0 },
+                script_sig: vec![],
+                sequence: 0,
+            });
+            tx.outputs.push(super::super::transaction::TxOut {
+                value: 0,
+                script_pubkey: vec![0x6a],
+            });
+            let sc = super::super::sighash::p2wpkh_script_code(&pubkey_hash);
+            let prev = super::super::sighash::PrevOut { script_code: sc, value: 0 };
+            let sh = super::super::sighash::segwit_v0_sighash(
+                &tx, 0, &prev, super::super::tapscript::SighashType::All
+            ).unwrap();
+            signer.sign_prehashed(&sh).unwrap()
+        };
+
+        // Verify
+        let result = verify_simple_p2wpkh(&pubkey33, message, &sig.to_bytes());
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_bip322_verify_p2wpkh_wrong_message() {
+        use crate::traits::{KeyPair, Signer};
+        let signer = super::super::BitcoinSigner::generate().unwrap();
+        let pubkey_bytes = signer.public_key_bytes();
+        let mut pubkey33 = [0u8; 33];
+        pubkey33.copy_from_slice(&pubkey_bytes);
+
+        // Sign message A
+        let pubkey_hash = crypto::hash160(&pubkey33);
+        let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
+        let to_spend = create_to_spend_tx(&script_pk, b"message A");
+        let to_spend_txid = compute_txid(&to_spend);
+        let mut tx = super::super::transaction::Transaction::new(0);
+        let mut txid_internal = to_spend_txid;
+        txid_internal.reverse();
+        tx.inputs.push(super::super::transaction::TxIn {
+            previous_output: super::super::transaction::OutPoint { txid: txid_internal, vout: 0 },
+            script_sig: vec![],
+            sequence: 0,
+        });
+        tx.outputs.push(super::super::transaction::TxOut {
+            value: 0,
+            script_pubkey: vec![0x6a],
+        });
+        let sc = super::super::sighash::p2wpkh_script_code(&pubkey_hash);
+        let prev = super::super::sighash::PrevOut { script_code: sc, value: 0 };
+        let sh = super::super::sighash::segwit_v0_sighash(
+            &tx, 0, &prev, super::super::tapscript::SighashType::All
+        ).unwrap();
+        let sig = signer.sign_prehashed(&sh).unwrap();
+
+        // Verify against message B — should fail
+        let result = verify_simple_p2wpkh(&pubkey33, b"message B", &sig.to_bytes());
+        // Should either be Ok(false) or Err
+        if let Ok(valid) = result {
+            assert!(!valid, "wrong message should not verify");
+        }
     }
 }

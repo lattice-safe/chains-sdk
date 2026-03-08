@@ -187,6 +187,141 @@ impl Psbt {
         self.set_input_kv(input_idx, vec![InputKey::TapKeySig as u8], signature.to_vec());
     }
 
+    /// Sign a SegWit v0 (P2WPKH) input using the provided signer.
+    ///
+    /// Reads the witness UTXO from the input map, computes the BIP-143 sighash,
+    /// signs with ECDSA, and stores the partial signature in the PSBT.
+    ///
+    /// # Arguments
+    /// - `input_idx` — The input index to sign
+    /// - `signer` — A `BitcoinSigner` whose public key matches the input
+    /// - `sighash_type` — Sighash flag (typically `All`)
+    pub fn sign_segwit_input(
+        &mut self,
+        input_idx: usize,
+        signer: &crate::bitcoin::BitcoinSigner,
+        sighash_type: crate::bitcoin::tapscript::SighashType,
+    ) -> Result<(), SignerError> {
+        use crate::traits::Signer;
+        use crate::bitcoin::sighash;
+        use crate::bitcoin::transaction::*;
+
+        // Extract witness UTXO from input map
+        let witness_utxo_key = vec![InputKey::WitnessUtxo as u8];
+        let utxo_data = self.inputs.get(input_idx)
+            .and_then(|m| m.get(&witness_utxo_key))
+            .ok_or_else(|| SignerError::SigningFailed(
+                "missing witness UTXO for input".into()
+            ))?
+            .clone();
+
+        // Parse witness UTXO: amount (8 bytes LE) + scriptPubKey
+        if utxo_data.len() < 9 {
+            return Err(SignerError::SigningFailed("witness UTXO too short".into()));
+        }
+        let mut amount_bytes = [0u8; 8];
+        amount_bytes.copy_from_slice(&utxo_data[..8]);
+        let amount = u64::from_le_bytes(amount_bytes);
+
+        // Extract scriptPubKey (skip compact size)
+        let mut utxo_off = 8usize;
+        let script_len = encoding::read_compact_size(&utxo_data, &mut utxo_off)? as usize;
+        let script_pk = &utxo_data[utxo_off..utxo_off + script_len];
+
+        // Extract pubkey hash from P2WPKH scriptPubKey: OP_0 OP_PUSH20 <hash>
+        if script_pk.len() != 22 || script_pk[0] != 0x00 || script_pk[1] != 0x14 {
+            return Err(SignerError::SigningFailed(
+                "input is not P2WPKH (expected OP_0 OP_PUSH20)".into()
+            ));
+        }
+        let mut pubkey_hash = [0u8; 20];
+        pubkey_hash.copy_from_slice(&script_pk[2..22]);
+
+        // Get the unsigned transaction
+        let tx_bytes = self.unsigned_tx()
+            .ok_or_else(|| SignerError::SigningFailed("missing unsigned tx".into()))?
+            .clone();
+
+        // Minimal tx parsing for sighash: we need to build a Transaction struct
+        let tx = parse_unsigned_tx(&tx_bytes)?;
+
+        // Compute BIP-143 sighash
+        let script_code = sighash::p2wpkh_script_code(&pubkey_hash);
+        let prev_out = sighash::PrevOut { script_code, value: amount };
+        let sighash_value = sighash::segwit_v0_sighash(&tx, input_idx, &prev_out, sighash_type)?;
+
+        // Sign
+        let sig = signer.sign_prehashed(&sighash_value)?;
+        let mut sig_bytes = sig.to_bytes();
+        sig_bytes.push(sighash_type.to_byte());
+
+        // Store as partial signature: key = 0x02 || compressed_pubkey
+        let pubkey = signer.public_key_bytes();
+        let mut key = vec![InputKey::PartialSig as u8];
+        key.extend_from_slice(&pubkey);
+        self.set_input_kv(input_idx, key, sig_bytes);
+
+        Ok(())
+    }
+
+    /// Sign a Taproot (P2TR) input using the provided Schnorr signer.
+    ///
+    /// Reads the witness UTXO from the input map, computes the BIP-341 sighash,
+    /// signs with Schnorr, and stores the key-path signature in the PSBT.
+    pub fn sign_taproot_input(
+        &mut self,
+        input_idx: usize,
+        signer: &crate::bitcoin::schnorr::SchnorrSigner,
+        sighash_type: crate::bitcoin::tapscript::SighashType,
+    ) -> Result<(), SignerError> {
+        use crate::traits::Signer;
+        use crate::bitcoin::sighash;
+        use crate::bitcoin::transaction::*;
+
+        // Extract all witness UTXOs for taproot sighash (needs all prevouts)
+        let mut prevouts = Vec::new();
+        let witness_utxo_key = vec![InputKey::WitnessUtxo as u8];
+        for (i, input_map) in self.inputs.iter().enumerate() {
+            let utxo_data = input_map.get(&witness_utxo_key)
+                .ok_or_else(|| SignerError::SigningFailed(
+                    format!("missing witness UTXO for input {i}")
+                ))?;
+            if utxo_data.len() < 9 {
+                return Err(SignerError::SigningFailed(format!("witness UTXO {i} too short")));
+            }
+            let mut amount_bytes = [0u8; 8];
+            amount_bytes.copy_from_slice(&utxo_data[..8]);
+            let amount = u64::from_le_bytes(amount_bytes);
+            let mut utxo_off = 8usize;
+            let script_len = encoding::read_compact_size(utxo_data, &mut utxo_off)? as usize;
+            let script_pk = utxo_data[utxo_off..utxo_off + script_len].to_vec();
+            prevouts.push(TxOut { value: amount, script_pubkey: script_pk });
+        }
+
+        // Get the unsigned transaction
+        let tx_bytes = self.unsigned_tx()
+            .ok_or_else(|| SignerError::SigningFailed("missing unsigned tx".into()))?
+            .clone();
+        let tx = parse_unsigned_tx(&tx_bytes)?;
+
+        // Compute BIP-341 sighash
+        let sighash_value = sighash::taproot_key_path_sighash(
+            &tx, input_idx, &prevouts, sighash_type,
+        )?;
+
+        // Sign with Schnorr
+        let sig = signer.sign(&sighash_value)?;
+        let mut sig_bytes = sig.bytes.to_vec();
+        // Append sighash byte only if not Default (0x00)
+        if sighash_type.to_byte() != 0x00 {
+            sig_bytes.push(sighash_type.to_byte());
+        }
+
+        // Store as BIP-371 tap key sig
+        self.set_tap_key_sig(input_idx, &sig_bytes);
+        Ok(())
+    }
+
     /// Serialize the PSBT to binary format.
     ///
     /// Format: `magic || 0xFF || global_map || 0x00 || input_maps... || output_maps...`
