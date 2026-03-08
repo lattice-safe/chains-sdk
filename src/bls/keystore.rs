@@ -67,15 +67,15 @@ pub struct BlsKeystore {
     /// Path used for key derivation (e.g., "m/12381/3600/0/0/0").
     pub path: String,
     /// Scrypt parameters.
-    pub scrypt_params: BlsScryptParams,
+    scrypt_params: BlsScryptParams,
     /// Scrypt salt (32 bytes).
-    pub salt: Vec<u8>,
+    salt: Vec<u8>,
     /// AES-128-CTR IV (16 bytes).
-    pub iv: Vec<u8>,
+    iv: Vec<u8>,
     /// Encrypted secret key ciphertext.
-    pub ciphertext: Vec<u8>,
+    ciphertext: Vec<u8>,
     /// SHA-256 checksum.
-    pub checksum: [u8; 32],
+    checksum: [u8; 32],
 }
 
 impl BlsKeystore {

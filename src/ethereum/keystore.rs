@@ -63,15 +63,15 @@ pub struct Keystore {
     /// EIP-55 checksummed address.
     pub address: String,
     /// Scrypt parameters used.
-    pub scrypt_params: ScryptParams,
+    scrypt_params: ScryptParams,
     /// 32-byte random salt for scrypt.
-    pub salt: [u8; 32],
+    salt: [u8; 32],
     /// 16-byte IV for AES-128-CTR.
-    pub iv: [u8; 16],
+    iv: [u8; 16],
     /// Encrypted private key (ciphertext).
-    pub ciphertext: Vec<u8>,
+    ciphertext: Vec<u8>,
     /// MAC: keccak256(derived_key[16..32] || ciphertext).
-    pub mac: [u8; 32],
+    mac: [u8; 32],
 }
 
 impl Keystore {
