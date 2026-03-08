@@ -131,7 +131,7 @@ pub fn htlc_script(
 
 /// Compute the SHA-256 hash of a preimage for HTLC usage.
 pub fn htlc_payment_hash(preimage: &[u8]) -> [u8; 32] {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(preimage);
     let result = hasher.finalize();
@@ -161,11 +161,7 @@ pub fn htlc_claim_witness(
 /// Build the witness for refunding an HTLC (timelock path).
 ///
 /// Witness: `<signature> <pubkey> OP_FALSE`
-pub fn htlc_refund_witness(
-    signature: &[u8],
-    pubkey: &[u8],
-    htlc_script: &[u8],
-) -> Vec<Vec<u8>> {
+pub fn htlc_refund_witness(signature: &[u8], pubkey: &[u8], htlc_script: &[u8]) -> Vec<Vec<u8>> {
     vec![
         signature.to_vec(),
         pubkey.to_vec(),
@@ -440,7 +436,7 @@ mod tests {
         assert!(script.contains(&0x68)); // OP_ENDIF
         assert!(script.contains(&0xA8)); // OP_SHA256
         assert!(script.contains(&0xB1)); // OP_CLTV
-        // Should contain both pubkey hashes
+                                         // Should contain both pubkey hashes
         assert!(script.windows(20).any(|w| w == PKH));
         assert!(script.windows(20).any(|w| w == PKH2));
     }
@@ -489,10 +485,30 @@ mod tests {
 
     fn make_utxos() -> Vec<Utxo> {
         vec![
-            Utxo { txid: [1; 32], vout: 0, value: 100_000, input_vsize: 68 },
-            Utxo { txid: [2; 32], vout: 0, value: 50_000, input_vsize: 68 },
-            Utxo { txid: [3; 32], vout: 0, value: 200_000, input_vsize: 68 },
-            Utxo { txid: [4; 32], vout: 0, value: 30_000, input_vsize: 68 },
+            Utxo {
+                txid: [1; 32],
+                vout: 0,
+                value: 100_000,
+                input_vsize: 68,
+            },
+            Utxo {
+                txid: [2; 32],
+                vout: 0,
+                value: 50_000,
+                input_vsize: 68,
+            },
+            Utxo {
+                txid: [3; 32],
+                vout: 0,
+                value: 200_000,
+                input_vsize: 68,
+            },
+            Utxo {
+                txid: [4; 32],
+                vout: 0,
+                value: 30_000,
+                input_vsize: 68,
+            },
         ]
     }
 
@@ -519,9 +535,24 @@ mod tests {
     #[test]
     fn test_bnb_finds_exact_match() {
         let utxos = vec![
-            Utxo { txid: [1; 32], vout: 0, value: 100_000, input_vsize: 68 },
-            Utxo { txid: [2; 32], vout: 0, value: 50_000, input_vsize: 68 },
-            Utxo { txid: [3; 32], vout: 0, value: 25_000, input_vsize: 68 },
+            Utxo {
+                txid: [1; 32],
+                vout: 0,
+                value: 100_000,
+                input_vsize: 68,
+            },
+            Utxo {
+                txid: [2; 32],
+                vout: 0,
+                value: 50_000,
+                input_vsize: 68,
+            },
+            Utxo {
+                txid: [3; 32],
+                vout: 0,
+                value: 25_000,
+                input_vsize: 68,
+            },
         ];
         // Target + fee should be achievable with exact match
         let result = select_coins_bnb(&utxos, 49_000, 1, 10, 34, 500).unwrap();

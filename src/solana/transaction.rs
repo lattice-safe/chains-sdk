@@ -25,8 +25,8 @@
 //! }
 //! ```
 
-use crate::error::SignerError;
 use super::SolanaSigner;
+use crate::error::SignerError;
 use ed25519_dalek::Signer as DalekSigner;
 
 // ─── Compact-u16 Encoding ──────────────────────────────────────────
@@ -41,7 +41,11 @@ pub fn encode_compact_u16(val: u16) -> Vec<u8> {
     } else if val < 0x4000 {
         vec![(val & 0x7F | 0x80) as u8, (val >> 7) as u8]
     } else {
-        vec![(val & 0x7F | 0x80) as u8, ((val >> 7) & 0x7F | 0x80) as u8, (val >> 14) as u8]
+        vec![
+            (val & 0x7F | 0x80) as u8,
+            ((val >> 7) & 0x7F | 0x80) as u8,
+            (val >> 14) as u8,
+        ]
     }
 }
 
@@ -85,13 +89,21 @@ impl AccountMeta {
     /// Create a writable signer account.
     #[must_use]
     pub fn new(pubkey: [u8; 32], is_signer: bool) -> Self {
-        Self { pubkey, is_signer, is_writable: true }
+        Self {
+            pubkey,
+            is_signer,
+            is_writable: true,
+        }
     }
 
     /// Create a read-only account.
     #[must_use]
     pub fn new_readonly(pubkey: [u8; 32], is_signer: bool) -> Self {
-        Self { pubkey, is_signer, is_writable: false }
+        Self {
+            pubkey,
+            is_signer,
+            is_writable: false,
+        }
     }
 }
 
@@ -156,19 +168,38 @@ impl Message {
         for ix in instructions {
             for acc in &ix.accounts {
                 // Skip if already fee payer
-                if acc.pubkey == fee_payer { continue; }
+                if acc.pubkey == fee_payer {
+                    continue;
+                }
                 match (acc.is_signer, acc.is_writable) {
-                    (true, true) => { if !writable_signers.contains(&acc.pubkey) { writable_signers.push(acc.pubkey); } }
-                    (true, false) => { if !readonly_signers.contains(&acc.pubkey) { readonly_signers.push(acc.pubkey); } }
-                    (false, true) => { if !writable_nonsigners.contains(&acc.pubkey) { writable_nonsigners.push(acc.pubkey); } }
-                    (false, false) => { if !readonly_nonsigners.contains(&acc.pubkey) { readonly_nonsigners.push(acc.pubkey); } }
+                    (true, true) => {
+                        if !writable_signers.contains(&acc.pubkey) {
+                            writable_signers.push(acc.pubkey);
+                        }
+                    }
+                    (true, false) => {
+                        if !readonly_signers.contains(&acc.pubkey) {
+                            readonly_signers.push(acc.pubkey);
+                        }
+                    }
+                    (false, true) => {
+                        if !writable_nonsigners.contains(&acc.pubkey) {
+                            writable_nonsigners.push(acc.pubkey);
+                        }
+                    }
+                    (false, false) => {
+                        if !readonly_nonsigners.contains(&acc.pubkey) {
+                            readonly_nonsigners.push(acc.pubkey);
+                        }
+                    }
                 }
             }
             // Add program IDs as read-only non-signers
             if !writable_signers.contains(&ix.program_id)
                 && !readonly_signers.contains(&ix.program_id)
                 && !writable_nonsigners.contains(&ix.program_id)
-                && !readonly_nonsigners.contains(&ix.program_id) {
+                && !readonly_nonsigners.contains(&ix.program_id)
+            {
                 readonly_nonsigners.push(ix.program_id);
             }
         }
@@ -184,17 +215,30 @@ impl Message {
         account_keys.extend_from_slice(&readonly_nonsigners);
 
         // Compile instructions
-        let compiled = instructions.iter().map(|ix| {
-            let program_id_index = account_keys.iter().position(|k| *k == ix.program_id).unwrap_or(0) as u8;
-            let accounts: Vec<u8> = ix.accounts.iter().map(|a| {
-                account_keys.iter().position(|k| *k == a.pubkey).unwrap_or(0) as u8
-            }).collect();
-            CompiledInstruction {
-                program_id_index,
-                accounts,
-                data: ix.data.clone(),
-            }
-        }).collect();
+        let compiled = instructions
+            .iter()
+            .map(|ix| {
+                let program_id_index = account_keys
+                    .iter()
+                    .position(|k| *k == ix.program_id)
+                    .unwrap_or(0) as u8;
+                let accounts: Vec<u8> = ix
+                    .accounts
+                    .iter()
+                    .map(|a| {
+                        account_keys
+                            .iter()
+                            .position(|k| *k == a.pubkey)
+                            .unwrap_or(0) as u8
+                    })
+                    .collect();
+                CompiledInstruction {
+                    program_id_index,
+                    accounts,
+                    data: ix.data.clone(),
+                }
+            })
+            .collect();
 
         Self {
             num_required_signatures,
@@ -261,7 +305,10 @@ impl Transaction {
             signatures.push(sig.to_bytes());
         }
 
-        Ok(Self { signatures, message: msg })
+        Ok(Self {
+            signatures,
+            message: msg,
+        })
     }
 
     /// Serialize the transaction for sending via `sendTransaction` RPC.
@@ -300,10 +347,7 @@ pub mod system_program {
         data.extend_from_slice(&lamports.to_le_bytes());
         Instruction {
             program_id: ID,
-            accounts: vec![
-                AccountMeta::new(*from, true),
-                AccountMeta::new(*to, false),
-            ],
+            accounts: vec![AccountMeta::new(*from, true), AccountMeta::new(*to, false)],
             data,
         }
     }
@@ -354,10 +398,9 @@ pub mod spl_token {
 
     /// SPL Token Program ID: `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
     pub const ID: [u8; 32] = [
-        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93,
-        0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79, 0xAC,
-        0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91,
-        0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF, 0x00, 0xA9,
+        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93, 0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79,
+        0xAC, 0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91, 0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF,
+        0x00, 0xA9,
     ];
 
     /// Create an SPL Token `Transfer` instruction.
@@ -626,10 +669,7 @@ pub mod spl_token {
 
     /// Create an SPL Token `Revoke` instruction (revoke delegate).
     #[must_use]
-    pub fn revoke(
-        source: &[u8; 32],
-        authority: &[u8; 32],
-    ) -> Instruction {
+    pub fn revoke(source: &[u8; 32], authority: &[u8; 32]) -> Instruction {
         Instruction {
             program_id: ID,
             accounts: vec![
@@ -678,10 +718,9 @@ pub mod spl_token_2022 {
 
     /// Token-2022 Program ID: `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`
     pub const ID: [u8; 32] = [
-        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93,
-        0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79, 0xAC,
-        0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91,
-        0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF, 0x00, 0xAA, // last byte differs from Token
+        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93, 0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79,
+        0xAC, 0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91, 0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF,
+        0x00, 0xAA, // last byte differs from Token
     ];
 
     /// Create a Token-2022 `TransferChecked` instruction.
@@ -749,10 +788,9 @@ pub mod compute_budget {
 
     /// Compute Budget Program ID.
     pub const ID: [u8; 32] = [
-        0x03, 0x06, 0x46, 0x6F, 0xE5, 0x21, 0x17, 0x32,
-        0xFF, 0xEC, 0xAD, 0xBA, 0x72, 0xC3, 0x9B, 0xE7,
-        0xBC, 0x8C, 0xE5, 0xBB, 0xC5, 0xF7, 0x12, 0x6B,
-        0x2C, 0x43, 0x9B, 0x3A, 0x40, 0x00, 0x00, 0x00,
+        0x03, 0x06, 0x46, 0x6F, 0xE5, 0x21, 0x17, 0x32, 0xFF, 0xEC, 0xAD, 0xBA, 0x72, 0xC3, 0x9B,
+        0xE7, 0xBC, 0x8C, 0xE5, 0xBB, 0xC5, 0xF7, 0x12, 0x6B, 0x2C, 0x43, 0x9B, 0x3A, 0x40, 0x00,
+        0x00, 0x00,
     ];
 
     /// Set the compute unit limit.
@@ -853,7 +891,10 @@ impl VersionedTransaction {
             signatures.push(sig.to_bytes());
         }
 
-        Ok(Self { signatures, message: msg })
+        Ok(Self {
+            signatures,
+            message: msg,
+        })
     }
 
     /// Serialize the versioned transaction for sending.
@@ -899,7 +940,9 @@ pub fn find_program_address(
             return Ok((addr, bump));
         }
     }
-    Err(SignerError::SigningFailed("PDA: no valid bump found".into()))
+    Err(SignerError::SigningFailed(
+        "PDA: no valid bump found".into(),
+    ))
 }
 
 /// Create a Program Derived Address from seeds, a bump, and a program ID.
@@ -910,7 +953,7 @@ pub fn create_program_address(
     bump: &[u8],
     program_id: &[u8; 32],
 ) -> Result<[u8; 32], SignerError> {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
     for seed in seeds {
@@ -959,7 +1002,9 @@ impl Message {
         let mut account_keys = Vec::with_capacity(num_keys as usize);
         for _ in 0..num_keys {
             if pos + 32 > data.len() {
-                return Err(SignerError::ParseError("message: truncated account key".into()));
+                return Err(SignerError::ParseError(
+                    "message: truncated account key".into(),
+                ));
             }
             let mut key = [0u8; 32];
             key.copy_from_slice(&data[pos..pos + 32]);
@@ -969,7 +1014,9 @@ impl Message {
 
         // Recent blockhash
         if pos + 32 > data.len() {
-            return Err(SignerError::ParseError("message: truncated blockhash".into()));
+            return Err(SignerError::ParseError(
+                "message: truncated blockhash".into(),
+            ));
         }
         let mut recent_blockhash = [0u8; 32];
         recent_blockhash.copy_from_slice(&data[pos..pos + 32]);
@@ -981,7 +1028,9 @@ impl Message {
         let mut instructions = Vec::with_capacity(num_ix as usize);
         for _ in 0..num_ix {
             if pos >= data.len() {
-                return Err(SignerError::ParseError("message: truncated instruction".into()));
+                return Err(SignerError::ParseError(
+                    "message: truncated instruction".into(),
+                ));
             }
             let program_id_index = data[pos];
             pos += 1;
@@ -989,7 +1038,9 @@ impl Message {
             let (num_accounts, consumed) = decode_compact_u16(&data[pos..])?;
             pos += consumed;
             if pos + num_accounts as usize > data.len() {
-                return Err(SignerError::ParseError("message: truncated instruction accounts".into()));
+                return Err(SignerError::ParseError(
+                    "message: truncated instruction accounts".into(),
+                ));
             }
             let accounts = data[pos..pos + num_accounts as usize].to_vec();
             pos += num_accounts as usize;
@@ -997,7 +1048,9 @@ impl Message {
             let (data_len, consumed) = decode_compact_u16(&data[pos..])?;
             pos += consumed;
             if pos + data_len as usize > data.len() {
-                return Err(SignerError::ParseError("message: truncated instruction data".into()));
+                return Err(SignerError::ParseError(
+                    "message: truncated instruction data".into(),
+                ));
             }
             let ix_data = data[pos..pos + data_len as usize].to_vec();
             pos += data_len as usize;
@@ -1031,7 +1084,9 @@ impl Transaction {
         let mut signatures = Vec::with_capacity(num_sigs as usize);
         for _ in 0..num_sigs {
             if pos + 64 > data.len() {
-                return Err(SignerError::ParseError("transaction: truncated signature".into()));
+                return Err(SignerError::ParseError(
+                    "transaction: truncated signature".into(),
+                ));
             }
             let mut sig = [0u8; 64];
             sig.copy_from_slice(&data[pos..pos + 64]);
@@ -1042,7 +1097,10 @@ impl Transaction {
         // Message
         let message = Message::deserialize(&data[pos..])?;
 
-        Ok(Self { signatures, message })
+        Ok(Self {
+            signatures,
+            message,
+        })
     }
 }
 
@@ -1136,7 +1194,8 @@ impl InstructionDataBuilder {
     #[must_use]
     pub fn write_string(mut self, s: &str) -> Self {
         let bytes = s.as_bytes();
-        self.buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(bytes.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(bytes);
         self
     }
@@ -1145,7 +1204,9 @@ impl InstructionDataBuilder {
     #[must_use]
     pub fn write_option(mut self, val: Option<&[u8]>) -> Self {
         match val {
-            None => { self.buf.push(0); }
+            None => {
+                self.buf.push(0);
+            }
             Some(data) => {
                 self.buf.push(1);
                 self.buf.extend_from_slice(data);
@@ -1157,7 +1218,8 @@ impl InstructionDataBuilder {
     /// Write a Borsh-encoded `Vec<u8>` (u32 length prefix + bytes).
     #[must_use]
     pub fn write_vec(mut self, data: &[u8]) -> Self {
-        self.buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(data.len() as u32).to_le_bytes());
         self.buf.extend_from_slice(data);
         self
     }
@@ -1204,8 +1266,11 @@ impl<'a> InstructionDataReader<'a> {
         if self.pos + 2 > self.data.len() {
             return Err(SignerError::ParseError("read_u16: EOF".into()));
         }
-        let val = u16::from_le_bytes(self.data[self.pos..self.pos + 2].try_into()
-            .map_err(|_| SignerError::ParseError("read_u16: bad bytes".into()))?);
+        let val = u16::from_le_bytes(
+            self.data[self.pos..self.pos + 2]
+                .try_into()
+                .map_err(|_| SignerError::ParseError("read_u16: bad bytes".into()))?,
+        );
         self.pos += 2;
         Ok(val)
     }
@@ -1215,8 +1280,11 @@ impl<'a> InstructionDataReader<'a> {
         if self.pos + 4 > self.data.len() {
             return Err(SignerError::ParseError("read_u32: EOF".into()));
         }
-        let val = u32::from_le_bytes(self.data[self.pos..self.pos + 4].try_into()
-            .map_err(|_| SignerError::ParseError("read_u32: bad bytes".into()))?);
+        let val = u32::from_le_bytes(
+            self.data[self.pos..self.pos + 4]
+                .try_into()
+                .map_err(|_| SignerError::ParseError("read_u32: bad bytes".into()))?,
+        );
         self.pos += 4;
         Ok(val)
     }
@@ -1226,8 +1294,11 @@ impl<'a> InstructionDataReader<'a> {
         if self.pos + 8 > self.data.len() {
             return Err(SignerError::ParseError("read_u64: EOF".into()));
         }
-        let val = u64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into()
-            .map_err(|_| SignerError::ParseError("read_u64: bad bytes".into()))?);
+        let val = u64::from_le_bytes(
+            self.data[self.pos..self.pos + 8]
+                .try_into()
+                .map_err(|_| SignerError::ParseError("read_u64: bad bytes".into()))?,
+        );
         self.pos += 8;
         Ok(val)
     }
@@ -1388,7 +1459,7 @@ mod tests {
         assert_eq!(ix.accounts.len(), 3);
         assert!(!ix.accounts[0].is_signer); // source
         assert!(!ix.accounts[1].is_signer); // destination
-        assert!(ix.accounts[2].is_signer);  // authority
+        assert!(ix.accounts[2].is_signer); // authority
         assert_eq!(ix.data[0], 3); // Transfer discriminator
         assert_eq!(ix.data.len(), 9);
     }
@@ -1569,7 +1640,10 @@ mod tests {
         let serialized = msg.serialize();
 
         let restored = Message::deserialize(&serialized).unwrap();
-        assert_eq!(restored.num_required_signatures, msg.num_required_signatures);
+        assert_eq!(
+            restored.num_required_signatures,
+            msg.num_required_signatures
+        );
         assert_eq!(restored.account_keys.len(), msg.account_keys.len());
         assert_eq!(restored.instructions.len(), msg.instructions.len());
         assert_eq!(restored.instructions[0].data, msg.instructions[0].data);
@@ -1588,7 +1662,10 @@ mod tests {
 
         assert_eq!(restored.signatures.len(), tx.signatures.len());
         assert_eq!(restored.signatures[0], tx.signatures[0]);
-        assert_eq!(restored.message.account_keys.len(), tx.message.account_keys.len());
+        assert_eq!(
+            restored.message.account_keys.len(),
+            tx.message.account_keys.len()
+        );
     }
 
     #[test]
@@ -1625,9 +1702,7 @@ mod tests {
 
     #[test]
     fn test_instruction_data_builder_option() {
-        let none_data = InstructionDataBuilder::new()
-            .write_option(None)
-            .build();
+        let none_data = InstructionDataBuilder::new().write_option(None).build();
         assert_eq!(none_data, vec![0]);
 
         let some_data = InstructionDataBuilder::new()
@@ -1682,8 +1757,10 @@ mod tests {
     #[test]
     fn test_spl_token_set_authority() {
         let ix = spl_token::set_authority(
-            &[0x11; 32], &[0x22; 32],
-            spl_token::AuthorityType::MintTokens, Some(&[0x33; 32]),
+            &[0x11; 32],
+            &[0x22; 32],
+            spl_token::AuthorityType::MintTokens,
+            Some(&[0x33; 32]),
         );
         assert_eq!(ix.data[0], 6); // SetAuthority
         assert_eq!(ix.data[1], 0); // MintTokens
@@ -1699,7 +1776,12 @@ mod tests {
     #[test]
     fn test_spl_token_transfer_checked() {
         let ix = spl_token::transfer_checked(
-            &[0x11; 32], &[0x22; 32], &[0x33; 32], &[0x44; 32], 1000, 6,
+            &[0x11; 32],
+            &[0x22; 32],
+            &[0x33; 32],
+            &[0x44; 32],
+            1000,
+            6,
         );
         assert_eq!(ix.data[0], 12); // TransferChecked
         assert_eq!(ix.accounts.len(), 4); // source, mint, dest, authority
@@ -1710,7 +1792,12 @@ mod tests {
     #[test]
     fn test_token_2022_transfer_checked() {
         let ix = spl_token_2022::transfer_checked(
-            &[0x11; 32], &[0x22; 32], &[0x33; 32], &[0x44; 32], 1000, 9,
+            &[0x11; 32],
+            &[0x22; 32],
+            &[0x33; 32],
+            &[0x44; 32],
+            1000,
+            9,
         );
         assert_eq!(ix.program_id, spl_token_2022::ID);
         assert_eq!(ix.data[0], 12);
@@ -1719,7 +1806,13 @@ mod tests {
     #[test]
     fn test_token_2022_transfer_checked_with_fee() {
         let ix = spl_token_2022::transfer_checked_with_fee(
-            &[0x11; 32], &[0x22; 32], &[0x33; 32], &[0x44; 32], 1000, 9, 50,
+            &[0x11; 32],
+            &[0x22; 32],
+            &[0x33; 32],
+            &[0x44; 32],
+            1000,
+            9,
+            50,
         );
         assert_eq!(ix.data[0], 26); // TransferCheckedWithFee
         let fee = u64::from_le_bytes(ix.data[10..18].try_into().unwrap());
@@ -1734,7 +1827,10 @@ mod tests {
         let payer = signer.public_key_bytes_32();
         let ix = system_program::transfer(&payer, &[0xBB; 32], 100);
         let msg = Message::new(&[ix], payer);
-        let v0 = MessageV0 { message: msg, address_table_lookups: vec![] };
+        let v0 = MessageV0 {
+            message: msg,
+            address_table_lookups: vec![],
+        };
 
         let vtx = VersionedTransaction::sign(&v0, &[&signer], [0xCC; 32]).unwrap();
         assert_eq!(vtx.signatures.len(), 1);
@@ -1748,7 +1844,10 @@ mod tests {
         let payer = signer.public_key_bytes_32();
         let ix = system_program::transfer(&payer, &[0xBB; 32], 100);
         let msg = Message::new(&[ix], payer);
-        let v0 = MessageV0 { message: msg, address_table_lookups: vec![] };
+        let v0 = MessageV0 {
+            message: msg,
+            address_table_lookups: vec![],
+        };
 
         let vtx1 = VersionedTransaction::sign(&v0, &[&signer], [0; 32]).unwrap();
         let vtx2 = VersionedTransaction::sign(&v0, &[&signer], [0; 32]).unwrap();

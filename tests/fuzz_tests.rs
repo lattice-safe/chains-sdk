@@ -125,9 +125,13 @@ mod bls_fuzz {
         let pk_bytes = Signer::public_key_bytes(&signer);
         let sk_bytes = signer.private_key_bytes();
         let ks = BlsKeystore::encrypt(
-            &sk_bytes, &pk_bytes, b"correct", "m/12381/3600/0/0/0",
+            &sk_bytes,
+            &pk_bytes,
+            b"correct",
+            "m/12381/3600/0/0/0",
             &BlsScryptParams::light(),
-        ).unwrap();
+        )
+        .unwrap();
 
         fuzz_no_panic("BLS keystore decrypt", 50, 64, |data| {
             let _ = ks.decrypt(data);

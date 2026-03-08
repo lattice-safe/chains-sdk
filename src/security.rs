@@ -68,14 +68,13 @@ pub fn secure_zero(data: &mut [u8]) {
     data.zeroize();
 }
 
-// ─── Guarded Memory ────────────────────────────────────────────────
-
 /// A guarded memory region that zeroizes on drop.
 ///
 /// For enclave environments where sensitive data must be:
 /// 1. Zeroized when no longer needed
 /// 2. Tracked for lifetime management
 /// 3. Protected from accidental copies
+/// 4. Locked in RAM (when `mlock` feature is enabled)
 ///
 /// # Example
 /// ```
@@ -83,7 +82,7 @@ pub fn secure_zero(data: &mut [u8]) {
 ///
 /// let mut guard = GuardedMemory::new(32);
 /// guard.as_mut()[..4].copy_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
-/// // memory is automatically zeroized when `guard` is dropped
+/// // memory is automatically zeroized (and munlocked) when `guard` is dropped
 /// ```
 pub struct GuardedMemory {
     inner: Zeroizing<Vec<u8>>,
@@ -91,11 +90,15 @@ pub struct GuardedMemory {
 
 impl GuardedMemory {
     /// Allocate a new guarded memory region of `size` bytes (zeroed).
+    ///
+    /// When the `mlock` feature is enabled, the memory is locked into RAM
+    /// to prevent the OS from swapping it to disk.
     #[must_use]
     pub fn new(size: usize) -> Self {
-        Self {
-            inner: Zeroizing::new(vec![0u8; size]),
-        }
+        let inner = Zeroizing::new(vec![0u8; size]);
+        #[cfg(feature = "mlock")]
+        lock_memory(inner.as_ptr(), inner.len());
+        Self { inner }
     }
 
     /// Create from existing data (takes ownership, original is NOT zeroized).
@@ -104,22 +107,37 @@ impl GuardedMemory {
     /// have the data in a `Vec<u8>`.
     #[must_use]
     pub fn from_vec(data: Vec<u8>) -> Self {
-        Self {
-            inner: Zeroizing::new(data),
-        }
+        let inner = Zeroizing::new(data);
+        #[cfg(feature = "mlock")]
+        lock_memory(inner.as_ptr(), inner.len());
+        Self { inner }
     }
+}
 
+impl AsRef<[u8]> for GuardedMemory {
     /// Immutable access to the guarded bytes.
-    #[must_use]
-    pub fn as_ref(&self) -> &[u8] {
+    fn as_ref(&self) -> &[u8] {
         &self.inner
     }
+}
 
+impl AsMut<[u8]> for GuardedMemory {
     /// Mutable access to the guarded bytes.
-    pub fn as_mut(&mut self) -> &mut [u8] {
+    fn as_mut(&mut self) -> &mut [u8] {
         &mut self.inner
     }
+}
 
+impl Drop for GuardedMemory {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        // Unlock memory before zeroization (Zeroizing handles the zeroing)
+        #[cfg(feature = "mlock")]
+        unlock_memory(self.inner.as_ptr(), self.inner.len());
+    }
+}
+
+impl GuardedMemory {
     /// Length of the guarded region in bytes.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -142,6 +160,31 @@ impl core::fmt::Debug for GuardedMemory {
     }
 }
 
+// ─── Memory Locking ────────────────────────────────────────────────
+
+/// Lock a memory region to prevent swapping to disk.
+///
+/// Uses `mlock(2)` on Unix systems. Silently ignores errors
+/// (e.g., insufficient `RLIMIT_MEMLOCK` — the security is best-effort).
+#[cfg(feature = "mlock")]
+#[allow(unsafe_code)]
+fn lock_memory(ptr: *const u8, len: usize) {
+    if len > 0 {
+        // Safety: ptr points to a valid allocated region of len bytes.
+        // mlock is always safe to call on valid memory.
+        unsafe { libc::mlock(ptr.cast(), len) };
+    }
+}
+
+/// Unlock a previously locked memory region.
+#[cfg(feature = "mlock")]
+#[allow(unsafe_code)]
+fn unlock_memory(ptr: *const u8, len: usize) {
+    if len > 0 {
+        unsafe { libc::munlock(ptr.cast(), len) };
+    }
+}
+
 // ─── Pluggable RNG ─────────────────────────────────────────────────
 
 /// Fill a buffer with cryptographically secure random bytes.
@@ -155,9 +198,8 @@ impl core::fmt::Debug for GuardedMemory {
 pub fn secure_random(buf: &mut [u8]) -> Result<(), crate::error::SignerError> {
     #[cfg(not(feature = "custom_rng"))]
     {
-        getrandom::getrandom(buf).map_err(|e| {
-            crate::error::SignerError::SigningFailed(format!("RNG failed: {e}"))
-        })
+        getrandom::getrandom(buf)
+            .map_err(|e| crate::error::SignerError::SigningFailed(format!("RNG failed: {e}")))
     }
 
     #[cfg(feature = "custom_rng")]
@@ -340,10 +382,16 @@ mod tests {
 
     #[test]
     fn test_ct_hex_decode() {
-        assert_eq!(ct_hex_decode("deadbeef"), Some(vec![0xDE, 0xAD, 0xBE, 0xEF]));
+        assert_eq!(
+            ct_hex_decode("deadbeef"),
+            Some(vec![0xDE, 0xAD, 0xBE, 0xEF])
+        );
         assert_eq!(ct_hex_decode(""), Some(vec![]));
         assert_eq!(ct_hex_decode("00ff"), Some(vec![0x00, 0xFF]));
-        assert_eq!(ct_hex_decode("DEADBEEF"), Some(vec![0xDE, 0xAD, 0xBE, 0xEF]));
+        assert_eq!(
+            ct_hex_decode("DEADBEEF"),
+            Some(vec![0xDE, 0xAD, 0xBE, 0xEF])
+        );
     }
 
     #[test]

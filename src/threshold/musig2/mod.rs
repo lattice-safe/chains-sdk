@@ -43,9 +43,9 @@
 //! }
 //! ```
 
-pub mod signing;
 pub mod adaptor;
-pub mod tweak;
 pub mod nested;
+pub mod signing;
+pub mod tweak;
 
 pub use signing::*;

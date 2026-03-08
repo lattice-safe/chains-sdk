@@ -44,7 +44,7 @@
 //! }
 //! ```
 
-pub mod keygen;
-pub mod signing;
 pub mod dkg;
+pub mod keygen;
 pub mod refresh;
+pub mod signing;

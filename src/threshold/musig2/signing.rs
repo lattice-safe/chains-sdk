@@ -2,6 +2,7 @@
 
 use crate::crypto;
 use crate::error::SignerError;
+use core::fmt;
 use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -56,8 +57,12 @@ pub struct PubNonce {
 impl PubNonce {
     /// Encode as 66 bytes: `R1 (33) || R2 (33)`.
     pub fn to_bytes(&self) -> [u8; 66] {
-        let r1_enc = ProjectivePoint::from(self.r1).to_affine().to_encoded_point(true);
-        let r2_enc = ProjectivePoint::from(self.r2).to_affine().to_encoded_point(true);
+        let r1_enc = ProjectivePoint::from(self.r1)
+            .to_affine()
+            .to_encoded_point(true);
+        let r2_enc = ProjectivePoint::from(self.r2)
+            .to_affine()
+            .to_encoded_point(true);
         let mut out = [0u8; 66];
         out[..33].copy_from_slice(r1_enc.as_bytes());
         out[33..].copy_from_slice(r2_enc.as_bytes());
@@ -92,10 +97,18 @@ pub struct AggNonce {
 }
 
 /// A partial signature scalar.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PartialSignature {
     /// The partial signature scalar.
     pub s: Scalar,
+}
+
+impl fmt::Debug for PartialSignature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PartialSignature")
+            .field("s", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// A final MuSig2 Schnorr signature (64 bytes: x(R) || s).
@@ -230,7 +243,7 @@ pub fn nonce_gen(
 ) -> Result<(SecNonce, PubNonce), SignerError> {
     // Generate random seed
     let mut rand_bytes = [0u8; 32];
-    getrandom::getrandom(&mut rand_bytes).map_err(|_| SignerError::EntropyError)?;
+    crate::security::secure_random(&mut rand_bytes)?;
 
     // k_1 = H("MuSig/nonce" || rand || pk || agg_pk || msg_prefixed || extra)
     let k1 = {
@@ -285,9 +298,7 @@ pub fn nonce_gen(
 /// Aggregate public nonces from all signers.
 pub fn nonce_agg(pub_nonces: &[PubNonce]) -> Result<AggNonce, SignerError> {
     if pub_nonces.is_empty() {
-        return Err(SignerError::InvalidPrivateKey(
-            "empty nonce list".into(),
-        ));
+        return Err(SignerError::InvalidPrivateKey("empty nonce list".into()));
     }
 
     let mut r1 = ProjectivePoint::IDENTITY;
@@ -312,8 +323,12 @@ pub(crate) fn compute_nonce_coeff(
     x_only_pubkey: &[u8; 32],
     msg: &[u8],
 ) -> Scalar {
-    let r1_enc = ProjectivePoint::from(agg_nonce.r1).to_affine().to_encoded_point(true);
-    let r2_enc = ProjectivePoint::from(agg_nonce.r2).to_affine().to_encoded_point(true);
+    let r1_enc = ProjectivePoint::from(agg_nonce.r1)
+        .to_affine()
+        .to_encoded_point(true);
+    let r2_enc = ProjectivePoint::from(agg_nonce.r2)
+        .to_affine()
+        .to_encoded_point(true);
 
     let mut data = Vec::new();
     data.extend_from_slice(r1_enc.as_bytes());
@@ -504,7 +519,10 @@ mod tests {
         let pk = individual_pubkey(&sk).unwrap();
         // Generator point compressed: 02 79BE667E...
         assert_eq!(pk[0], 0x02);
-        assert_eq!(hex::encode(&pk[1..]), "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+        assert_eq!(
+            hex::encode(&pk[1..]),
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        );
     }
 
     #[test]

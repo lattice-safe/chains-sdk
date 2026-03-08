@@ -50,8 +50,7 @@ impl Mnemonic {
 
         let entropy_bytes = entropy_bits / 8;
         let mut entropy = vec![0u8; entropy_bytes];
-        getrandom::getrandom(&mut entropy)
-            .map_err(|_| SignerError::EntropyError)?;
+        crate::security::secure_random(&mut entropy)?;
 
         Self::from_entropy(&entropy)
     }
@@ -128,12 +127,9 @@ impl Mnemonic {
         // Convert words to indices
         let mut indices = Vec::with_capacity(word_count);
         for word in &words {
-            let idx = wordlist
-                .iter()
-                .position(|w| w == word)
-                .ok_or_else(|| {
-                    SignerError::InvalidPrivateKey(format!("unknown BIP-39 word: {word}"))
-                })?;
+            let idx = wordlist.iter().position(|w| w == word).ok_or_else(|| {
+                SignerError::InvalidPrivateKey(format!("unknown BIP-39 word: {word}"))
+            })?;
             indices.push(idx as u32);
         }
 
@@ -448,7 +444,9 @@ mod tests {
     #[test]
     fn test_bip39_vector_24_words() {
         // 256-bit entropy → 24 words
-        let entropy = hex::decode("0000000000000000000000000000000000000000000000000000000000000000").unwrap();
+        let entropy =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
+                .unwrap();
         let m = Mnemonic::from_entropy(&entropy).unwrap();
         assert_eq!(
             m.phrase(),
@@ -458,7 +456,9 @@ mod tests {
 
     #[test]
     fn test_bip39_vector_24_seed() {
-        let entropy = hex::decode("0000000000000000000000000000000000000000000000000000000000000000").unwrap();
+        let entropy =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
+                .unwrap();
         let m = Mnemonic::from_entropy(&entropy).unwrap();
         let seed = m.to_seed("TREZOR");
         assert_eq!(

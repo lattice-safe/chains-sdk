@@ -220,7 +220,7 @@ pub fn scalar_from_bytes(bytes: &[u8; 32]) -> Result<Scalar, SignerError> {
 /// Generate a random non-zero scalar.
 pub fn random_scalar() -> Result<Scalar, SignerError> {
     let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).map_err(|_| SignerError::EntropyError)?;
+    crate::security::secure_random(&mut bytes)?;
     let wide = k256::U256::from_be_slice(&bytes);
     let scalar = <Scalar as Reduce<k256::U256>>::reduce(wide);
     if scalar == Scalar::ZERO {
@@ -238,11 +238,7 @@ mod tests {
     #[test]
     fn test_polynomial_evaluate() {
         // f(x) = 3 + 2x + x^2 → f(2) = 3 + 4 + 4 = 11
-        let coeffs = [
-            Scalar::from(3u64),
-            Scalar::from(2u64),
-            Scalar::from(1u64),
-        ];
+        let coeffs = [Scalar::from(3u64), Scalar::from(2u64), Scalar::from(1u64)];
         let result = polynomial_evaluate(&Scalar::from(2u64), &coeffs);
         assert_eq!(result, Scalar::from(11u64));
     }
@@ -330,7 +326,9 @@ mod tests {
         assert_eq!(out.key_packages.len(), 5);
         assert_eq!(out.vss_commitments.commitments.len(), 3); // degree t-1 = 2, plus constant
         for pkg in &out.key_packages {
-            assert!(out.vss_commitments.verify_share(pkg.identifier, pkg.secret_share()));
+            assert!(out
+                .vss_commitments
+                .verify_share(pkg.identifier, pkg.secret_share()));
         }
     }
 
@@ -339,6 +337,8 @@ mod tests {
         let secret = [0x42u8; 32];
         let out = trusted_dealer_keygen(&secret, 2, 3).unwrap();
         // identifier = 0 should fail
-        assert!(!out.vss_commitments.verify_share(0, out.key_packages[0].secret_share()));
+        assert!(!out
+            .vss_commitments
+            .verify_share(0, out.key_packages[0].secret_share()));
     }
 }

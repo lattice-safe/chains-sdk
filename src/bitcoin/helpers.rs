@@ -8,7 +8,7 @@
 //!
 //! These work with the existing `transaction.rs` types.
 
-use super::transaction::{TxOut, TxIn, OutPoint, Transaction};
+use super::transaction::{OutPoint, Transaction, TxIn, TxOut};
 
 // ═══════════════════════════════════════════════════════════════════
 // OP_RETURN
@@ -26,9 +26,11 @@ pub const OP_RETURN_MAX_SIZE: usize = 80;
 /// Returns `Err` if `data` exceeds 80 bytes (standardness limit).
 pub fn op_return(data: &[u8]) -> Result<TxOut, crate::error::SignerError> {
     if data.len() > OP_RETURN_MAX_SIZE {
-        return Err(crate::error::SignerError::ParseError(
-            format!("OP_RETURN data exceeds {} bytes: {}", OP_RETURN_MAX_SIZE, data.len()),
-        ));
+        return Err(crate::error::SignerError::ParseError(format!(
+            "OP_RETURN data exceeds {} bytes: {}",
+            OP_RETURN_MAX_SIZE,
+            data.len()
+        )));
     }
 
     let mut script = Vec::with_capacity(2 + data.len());
@@ -56,9 +58,10 @@ pub fn op_return(data: &[u8]) -> Result<TxOut, crate::error::SignerError> {
 pub fn op_return_multi(chunks: &[&[u8]]) -> Result<TxOut, crate::error::SignerError> {
     let total: usize = chunks.iter().map(|c| c.len()).sum();
     if total > OP_RETURN_MAX_SIZE {
-        return Err(crate::error::SignerError::ParseError(
-            format!("OP_RETURN total data exceeds {} bytes: {}", OP_RETURN_MAX_SIZE, total),
-        ));
+        return Err(crate::error::SignerError::ParseError(format!(
+            "OP_RETURN total data exceeds {} bytes: {}",
+            OP_RETURN_MAX_SIZE, total
+        )));
     }
 
     let mut script = vec![0x6A]; // OP_RETURN
@@ -109,7 +112,9 @@ pub fn enable_rbf_all(tx: &mut Transaction) {
 /// Check if any input in a transaction signals RBF.
 #[must_use]
 pub fn tx_signals_rbf(tx: &Transaction) -> bool {
-    tx.inputs.iter().any(|input| is_rbf_signaling(input.sequence))
+    tx.inputs
+        .iter()
+        .any(|input| is_rbf_signaling(input.sequence))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -134,7 +139,9 @@ pub fn cpfp_required_fee_rate(
     let package_vsize = parent_vsize as u64 + child_vsize as u64;
     let package_fee_needed = desired_fee_rate * package_vsize;
     let child_fee_needed = package_fee_needed.saturating_sub(parent_fee_sats);
-    if child_vsize == 0 { return 0; }
+    if child_vsize == 0 {
+        return 0;
+    }
     child_fee_needed / (child_vsize as u64)
 }
 
@@ -264,7 +271,7 @@ mod tests {
         let out = op_return(b"hello bitcoin").unwrap();
         assert_eq!(out.value, 0);
         assert_eq!(out.script_pubkey[0], 0x6A); // OP_RETURN
-        assert_eq!(out.script_pubkey[1], 13);   // length
+        assert_eq!(out.script_pubkey[1], 13); // length
         assert_eq!(&out.script_pubkey[2..], b"hello bitcoin");
     }
 
@@ -311,7 +318,10 @@ mod tests {
     #[test]
     fn test_enable_rbf() {
         let mut input = TxIn {
-            previous_output: OutPoint { txid: [0; 32], vout: 0 },
+            previous_output: OutPoint {
+                txid: [0; 32],
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFF,
         };
@@ -325,7 +335,10 @@ mod tests {
     fn test_tx_signals_rbf() {
         let mut tx = Transaction::new(2);
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: [0; 32], vout: 0 },
+            previous_output: OutPoint {
+                txid: [0; 32],
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFF,
         });
@@ -366,7 +379,7 @@ mod tests {
         // Must start with OP_FALSE OP_IF
         assert_eq!(envelope[0], 0x00); // OP_FALSE
         assert_eq!(envelope[1], 0x63); // OP_IF
-        // Must contain "ord"
+                                       // Must contain "ord"
         assert_eq!(&envelope[3..6], b"ord");
         // Must end with OP_ENDIF
         assert_eq!(*envelope.last().unwrap(), 0x68); // OP_ENDIF

@@ -5,12 +5,12 @@
 //!
 //! Run with: `cargo bench --all-features --bench security_bench`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 // ─── Constant-Time Hex vs Standard Hex ─────────────────────────────
 
 fn bench_ct_hex_encode(c: &mut Criterion) {
-    use trad_signer::security::{ct_hex_encode, ct_hex_decode};
+    use trad_signer::security::{ct_hex_decode, ct_hex_encode};
 
     let sizes: &[usize] = &[32, 64, 256, 1024];
 
@@ -94,14 +94,18 @@ fn bench_secure_zero(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("secure_zero");
     for &size in &[32usize, 256, 4096] {
-        group.bench_with_input(BenchmarkId::new("volatile_zero", size), &size, |b, &size| {
-            let mut buf = vec![0xFF_u8; size];
-            b.iter(|| {
-                // Reset to non-zero before measuring
-                buf.fill(0xFF);
-                secure_zero(black_box(&mut buf));
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("volatile_zero", size),
+            &size,
+            |b, &size| {
+                let mut buf = vec![0xFF_u8; size];
+                b.iter(|| {
+                    // Reset to non-zero before measuring
+                    buf.fill(0xFF);
+                    secure_zero(black_box(&mut buf));
+                });
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("slice_fill", size), &size, |b, &size| {
             let mut buf = vec![0xFF_u8; size];
@@ -127,7 +131,7 @@ fn bench_scrypt_kdf(c: &mut Criterion) {
 
     // Light params for benchmarking (standard params are too slow for CI)
     let light_params = ScryptParams {
-        n: 1 << 12,  // 4096 (light = fast)
+        n: 1 << 12, // 4096 (light = fast)
         r: 8,
         p: 1,
         dklen: 32,
@@ -136,11 +140,7 @@ fn bench_scrypt_kdf(c: &mut Criterion) {
     // Encrypt (KDF + AES-128-CTR + HMAC)
     group.bench_function("encrypt_light", |b| {
         b.iter(|| {
-            Keystore::encrypt(
-                black_box(&private_key),
-                black_box(password),
-                &light_params,
-            ).unwrap();
+            Keystore::encrypt(black_box(&private_key), black_box(password), &light_params).unwrap();
         });
     });
 
@@ -157,7 +157,7 @@ fn bench_scrypt_kdf(c: &mut Criterion) {
     // Standard params (1<<18 = 262144 — the Ethereum default)
     // Only included for reference; takes ~1s per iteration
     let standard_params = ScryptParams {
-        n: 1 << 18,  // 262144 (standard)
+        n: 1 << 18, // 262144 (standard)
         r: 8,
         p: 1,
         dklen: 32,
@@ -170,7 +170,8 @@ fn bench_scrypt_kdf(c: &mut Criterion) {
                 black_box(&private_key),
                 black_box(password),
                 &standard_params,
-            ).unwrap();
+            )
+            .unwrap();
         });
     });
 
@@ -187,7 +188,7 @@ fn bench_scrypt_kdf(c: &mut Criterion) {
 // ─── Solana PDA Derivation ─────────────────────────────────────────
 
 fn bench_pda(c: &mut Criterion) {
-    use trad_signer::solana::transaction::{find_program_address, create_program_address};
+    use trad_signer::solana::transaction::{create_program_address, find_program_address};
 
     let program_id = [0xAA_u8; 32];
 
@@ -195,10 +196,8 @@ fn bench_pda(c: &mut Criterion) {
 
     group.bench_function("find_program_address", |b| {
         b.iter(|| {
-            find_program_address(
-                black_box(&[b"vault", &[1u8; 32]]),
-                black_box(&program_id),
-            ).unwrap();
+            find_program_address(black_box(&[b"vault", &[1u8; 32]]), black_box(&program_id))
+                .unwrap();
         });
     });
 
@@ -239,10 +238,7 @@ fn bench_ed25519_ops(c: &mut Criterion) {
         let pk = signer.public_key_bytes();
         let verifier = SolanaVerifier::from_public_key_bytes(&pk).unwrap();
         b.iter(|| {
-            verifier.verify(
-                black_box(message),
-                &sig,
-            ).unwrap();
+            verifier.verify(black_box(message), &sig).unwrap();
         });
     });
 

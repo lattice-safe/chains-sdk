@@ -110,7 +110,9 @@ impl RlpItem {
     pub fn as_bytes(&self) -> Result<&[u8], SignerError> {
         match self {
             RlpItem::Bytes(b) => Ok(b),
-            RlpItem::List(_) => Err(SignerError::ParseError("expected RLP bytes, got list".into())),
+            RlpItem::List(_) => Err(SignerError::ParseError(
+                "expected RLP bytes, got list".into(),
+            )),
         }
     }
 
@@ -118,7 +120,9 @@ impl RlpItem {
     pub fn as_list(&self) -> Result<&[RlpItem], SignerError> {
         match self {
             RlpItem::List(items) => Ok(items),
-            RlpItem::Bytes(_) => Err(SignerError::ParseError("expected RLP list, got bytes".into())),
+            RlpItem::Bytes(_) => Err(SignerError::ParseError(
+                "expected RLP list, got bytes".into(),
+            )),
         }
     }
 
@@ -126,7 +130,9 @@ impl RlpItem {
     pub fn as_u64(&self) -> Result<u64, SignerError> {
         let bytes = self.as_bytes()?;
         if bytes.len() > 8 {
-            return Err(SignerError::ParseError("RLP integer too large for u64".into()));
+            return Err(SignerError::ParseError(
+                "RLP integer too large for u64".into(),
+            ));
         }
         let mut buf = [0u8; 8];
         buf[8 - bytes.len()..].copy_from_slice(bytes);
@@ -141,7 +147,8 @@ pub fn decode(data: &[u8]) -> Result<RlpItem, SignerError> {
     let (item, consumed) = decode_item(data, 0)?;
     if consumed != data.len() {
         return Err(SignerError::ParseError(format!(
-            "RLP: {} trailing bytes", data.len() - consumed
+            "RLP: {} trailing bytes",
+            data.len() - consumed
         )));
     }
     Ok(item)
@@ -152,7 +159,9 @@ pub fn decode_list_items(data: &[u8]) -> Result<Vec<RlpItem>, SignerError> {
     let item = decode(data)?;
     match item {
         RlpItem::List(items) => Ok(items),
-        _ => Err(SignerError::ParseError("expected RLP list at top level".into())),
+        _ => Err(SignerError::ParseError(
+            "expected RLP list at top level".into(),
+        )),
     }
 }
 
@@ -224,7 +233,11 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
     }
 }
 
-fn decode_items_in_range(data: &[u8], start: usize, end: usize) -> Result<Vec<RlpItem>, SignerError> {
+fn decode_items_in_range(
+    data: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Vec<RlpItem>, SignerError> {
     let mut items = Vec::new();
     let mut pos = start;
     while pos < end {
@@ -373,7 +386,18 @@ mod tests {
 
     #[test]
     fn test_rlp_integer_roundtrip() {
-        for val in [0u64, 1, 127, 128, 255, 256, 1024, 0xFFFF, 0xFFFFFFFF, u64::MAX] {
+        for val in [
+            0u64,
+            1,
+            127,
+            128,
+            255,
+            256,
+            1024,
+            0xFFFF,
+            0xFFFFFFFF,
+            u64::MAX,
+        ] {
             let encoded = encode_u64(val);
             let decoded = decode(&encoded).unwrap();
             assert_eq!(decoded.as_u64().unwrap(), val, "failed for {val}");
@@ -393,9 +417,7 @@ mod tests {
 
     #[test]
     fn test_rlp_access_list() {
-        let al = vec![
-            ([0xAA; 20], vec![[0xBB; 32]]),
-        ];
+        let al = vec![([0xAA; 20], vec![[0xBB; 32]])];
         let encoded = encode_access_list(&al);
         let decoded = decode(&encoded).unwrap();
         let list = decoded.as_list().unwrap();

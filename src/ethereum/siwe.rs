@@ -173,7 +173,8 @@ impl SiweMessage {
             } else if let Some(v) = line.strip_prefix("Version: ") {
                 version = v.to_string();
             } else if let Some(v) = line.strip_prefix("Chain ID: ") {
-                chain_id = v.parse::<u64>()
+                chain_id = v
+                    .parse::<u64>()
                     .map_err(|_| SignerError::ParseError("invalid chain ID".into()))?;
             } else if let Some(v) = line.strip_prefix("Nonce: ") {
                 nonce = v.to_string();
@@ -210,7 +211,10 @@ impl SiweMessage {
     /// Sign this SIWE message using EIP-191 `personal_sign`.
     ///
     /// Returns the 65-byte signature.
-    pub fn sign(&self, signer: &super::EthereumSigner) -> Result<super::EthereumSignature, SignerError> {
+    pub fn sign(
+        &self,
+        signer: &super::EthereumSigner,
+    ) -> Result<super::EthereumSignature, SignerError> {
         let msg = self.to_message();
         signer.personal_sign(msg.as_bytes())
     }
@@ -299,7 +303,10 @@ mod tests {
         msg.request_id = Some("req-123".to_string());
         let text = msg.to_message();
         let parsed = SiweMessage::from_message(&text).unwrap();
-        assert_eq!(parsed.expiration_time.as_deref(), Some("2025-01-01T00:00:00Z"));
+        assert_eq!(
+            parsed.expiration_time.as_deref(),
+            Some("2025-01-01T00:00:00Z")
+        );
         assert_eq!(parsed.not_before.as_deref(), Some("2023-01-01T00:00:00Z"));
         assert_eq!(parsed.request_id.as_deref(), Some("req-123"));
     }

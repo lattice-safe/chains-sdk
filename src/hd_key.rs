@@ -102,7 +102,8 @@ impl ExtendedPrivateKey {
             .map_err(|_| SignerError::InvalidPrivateKey("HMAC init failed".into()))?;
 
         let effective_index = if hardened {
-            index.checked_add(0x8000_0000)
+            index
+                .checked_add(0x8000_0000)
                 .ok_or_else(|| SignerError::InvalidPrivateKey("index overflow".into()))?
         } else {
             index
@@ -147,9 +148,8 @@ impl ExtendedPrivateKey {
             let child_nz: Option<k256::NonZeroScalar> =
                 k256::NonZeroScalar::new(child_scalar).into();
             let child_secret = k256::SecretKey::from(
-                child_nz.ok_or_else(|| {
-                    SignerError::InvalidPrivateKey("child key is zero".into())
-                })?,
+                child_nz
+                    .ok_or_else(|| SignerError::InvalidPrivateKey("child key is zero".into()))?,
             );
 
             let mut child_key = Zeroizing::new([0u8; 32]);
@@ -278,18 +278,23 @@ impl ExtendedPrivateKey {
         );
         if data.len() != 82 {
             return Err(SignerError::InvalidPrivateKey(format!(
-                "xprv must be 82 bytes, got {}", data.len()
+                "xprv must be 82 bytes, got {}",
+                data.len()
             )));
         }
         // Verify checksum (constant-time)
         let checksum = crypto::double_sha256(&data[..78]);
         use subtle::ConstantTimeEq;
         if data[78..82].ct_eq(&checksum[..4]).unwrap_u8() != 1 {
-            return Err(SignerError::InvalidPrivateKey("invalid xprv checksum".into()));
+            return Err(SignerError::InvalidPrivateKey(
+                "invalid xprv checksum".into(),
+            ));
         }
         // Verify version
         if data[..4] != [0x04, 0x88, 0xAD, 0xE4] {
-            return Err(SignerError::InvalidPrivateKey("not an xprv (wrong version)".into()));
+            return Err(SignerError::InvalidPrivateKey(
+                "not an xprv (wrong version)".into(),
+            ));
         }
         let depth = data[4];
         let mut parent_fingerprint = [0u8; 4];
@@ -299,14 +304,22 @@ impl ExtendedPrivateKey {
         chain_code.copy_from_slice(&data[13..45]);
         // data[45] should be 0x00 (private key prefix)
         if data[45] != 0x00 {
-            return Err(SignerError::InvalidPrivateKey("invalid private key prefix".into()));
+            return Err(SignerError::InvalidPrivateKey(
+                "invalid private key prefix".into(),
+            ));
         }
         let mut key = Zeroizing::new([0u8; 32]);
         key.copy_from_slice(&data[46..78]);
         // Validate the key
         k256::SecretKey::from_bytes((&*key).into())
             .map_err(|_| SignerError::InvalidPrivateKey("invalid xprv key".into()))?;
-        Ok(Self { key, chain_code, depth, parent_fingerprint, child_index })
+        Ok(Self {
+            key,
+            chain_code,
+            depth,
+            parent_fingerprint,
+            child_index,
+        })
     }
 
     /// Convert to an `ExtendedPublicKey` for watch-only derivation.
@@ -401,9 +414,9 @@ impl ExtendedPublicKey {
         child_chain.copy_from_slice(&result[32..]);
 
         // Parse IL as scalar and add to parent point
+        use k256::elliptic_curve::group::GroupEncoding;
         use k256::elliptic_curve::ops::Reduce;
         use k256::{ProjectivePoint, Scalar, U256};
-        use k256::elliptic_curve::group::GroupEncoding;
 
         let il_scalar = <Scalar as Reduce<U256>>::reduce(U256::from_be_slice(&il));
         let parent_point = k256::AffinePoint::from_bytes((&self.key).into());
@@ -418,7 +431,9 @@ impl ExtendedPublicKey {
         let encoded = child_affine.to_encoded_point(true);
         let child_key_bytes = encoded.as_bytes();
         if child_key_bytes.len() != 33 {
-            return Err(SignerError::InvalidPublicKey("child key serialization failed".into()));
+            return Err(SignerError::InvalidPublicKey(
+                "child key serialization failed".into(),
+            ));
         }
         let mut child_key = [0u8; 33];
         child_key.copy_from_slice(child_key_bytes);
@@ -465,16 +480,21 @@ impl ExtendedPublicKey {
             .map_err(|e| SignerError::InvalidPublicKey(format!("invalid base58: {e}")))?;
         if data.len() != 82 {
             return Err(SignerError::InvalidPublicKey(format!(
-                "xpub must be 82 bytes, got {}", data.len()
+                "xpub must be 82 bytes, got {}",
+                data.len()
             )));
         }
         let checksum = crypto::double_sha256(&data[..78]);
         use subtle::ConstantTimeEq;
         if data[78..82].ct_eq(&checksum[..4]).unwrap_u8() != 1 {
-            return Err(SignerError::InvalidPublicKey("invalid xpub checksum".into()));
+            return Err(SignerError::InvalidPublicKey(
+                "invalid xpub checksum".into(),
+            ));
         }
         if data[..4] != [0x04, 0x88, 0xB2, 0x1E] {
-            return Err(SignerError::InvalidPublicKey("not an xpub (wrong version)".into()));
+            return Err(SignerError::InvalidPublicKey(
+                "not an xpub (wrong version)".into(),
+            ));
         }
         let depth = data[4];
         let mut parent_fingerprint = [0u8; 4];
@@ -488,9 +508,17 @@ impl ExtendedPublicKey {
         let _pt = k256::AffinePoint::from_bytes((&key).into());
         use k256::elliptic_curve::group::GroupEncoding;
         if bool::from(k256::AffinePoint::from_bytes((&key).into()).is_none()) {
-            return Err(SignerError::InvalidPublicKey("invalid xpub key point".into()));
+            return Err(SignerError::InvalidPublicKey(
+                "invalid xpub key point".into(),
+            ));
         }
-        Ok(Self { key, chain_code, depth, parent_fingerprint, child_index })
+        Ok(Self {
+            key,
+            chain_code,
+            depth,
+            parent_fingerprint,
+            child_index,
+        })
     }
 
     /// Derive a **P2WPKH** (SegWit) address from this public key.
@@ -550,7 +578,9 @@ impl DerivationPath {
         let segments: Vec<&str> = path.split('/').collect();
 
         if segments.is_empty() {
-            return Err(SignerError::InvalidPrivateKey("empty derivation path".into()));
+            return Err(SignerError::InvalidPrivateKey(
+                "empty derivation path".into(),
+            ));
         }
 
         // First segment must be "m" or "M"
@@ -565,11 +595,12 @@ impl DerivationPath {
             if seg.is_empty() {
                 continue;
             }
-            let (hardened, num_str) = if seg.ends_with('\'') || seg.ends_with('h') || seg.ends_with('H') {
-                (true, &seg[..seg.len() - 1])
-            } else {
-                (false, *seg)
-            };
+            let (hardened, num_str) =
+                if seg.ends_with('\'') || seg.ends_with('h') || seg.ends_with('H') {
+                    (true, &seg[..seg.len() - 1])
+                } else {
+                    (false, *seg)
+                };
 
             let index: u32 = num_str.parse().map_err(|_| {
                 SignerError::InvalidPrivateKey(format!("invalid path segment: {seg}"))
@@ -591,11 +622,26 @@ impl DerivationPath {
     pub fn ethereum(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 44, hardened: true },
-                DerivationStep { index: 60, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: false },
-                DerivationStep { index, hardened: false },
+                DerivationStep {
+                    index: 44,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 60,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: false,
+                },
+                DerivationStep {
+                    index,
+                    hardened: false,
+                },
             ],
         }
     }
@@ -604,11 +650,26 @@ impl DerivationPath {
     pub fn bitcoin(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 44, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: false },
-                DerivationStep { index, hardened: false },
+                DerivationStep {
+                    index: 44,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: false,
+                },
+                DerivationStep {
+                    index,
+                    hardened: false,
+                },
             ],
         }
     }
@@ -617,11 +678,26 @@ impl DerivationPath {
     pub fn bitcoin_segwit(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 84, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: false },
-                DerivationStep { index, hardened: false },
+                DerivationStep {
+                    index: 84,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: false,
+                },
+                DerivationStep {
+                    index,
+                    hardened: false,
+                },
             ],
         }
     }
@@ -630,11 +706,26 @@ impl DerivationPath {
     pub fn bitcoin_taproot(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 86, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: false },
-                DerivationStep { index, hardened: false },
+                DerivationStep {
+                    index: 86,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: false,
+                },
+                DerivationStep {
+                    index,
+                    hardened: false,
+                },
             ],
         }
     }
@@ -643,10 +734,22 @@ impl DerivationPath {
     pub fn solana(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 44, hardened: true },
-                DerivationStep { index: 501, hardened: true },
-                DerivationStep { index, hardened: true },
-                DerivationStep { index: 0, hardened: true },
+                DerivationStep {
+                    index: 44,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 501,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
             ],
         }
     }
@@ -655,11 +758,26 @@ impl DerivationPath {
     pub fn xrp(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 44, hardened: true },
-                DerivationStep { index: 144, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: false },
-                DerivationStep { index, hardened: false },
+                DerivationStep {
+                    index: 44,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 144,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: false,
+                },
+                DerivationStep {
+                    index,
+                    hardened: false,
+                },
             ],
         }
     }
@@ -668,11 +786,26 @@ impl DerivationPath {
     pub fn neo(index: u32) -> Self {
         Self {
             steps: vec![
-                DerivationStep { index: 44, hardened: true },
-                DerivationStep { index: 888, hardened: true },
-                DerivationStep { index: 0, hardened: true },
-                DerivationStep { index: 0, hardened: false },
-                DerivationStep { index, hardened: false },
+                DerivationStep {
+                    index: 44,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 888,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: true,
+                },
+                DerivationStep {
+                    index: 0,
+                    hardened: false,
+                },
+                DerivationStep {
+                    index,
+                    hardened: false,
+                },
             ],
         }
     }
@@ -1054,7 +1187,10 @@ mod tests {
         let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
         let pubkey = master.to_extended_public_key().unwrap();
         let addr = pubkey.p2wpkh_address("bc").unwrap();
-        assert!(addr.starts_with("bc1q"), "P2WPKH should start with bc1q: {addr}");
+        assert!(
+            addr.starts_with("bc1q"),
+            "P2WPKH should start with bc1q: {addr}"
+        );
     }
 
     #[cfg(feature = "bitcoin")]
@@ -1064,7 +1200,10 @@ mod tests {
         let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
         let pubkey = master.to_extended_public_key().unwrap();
         let addr = pubkey.p2tr_address("bc").unwrap();
-        assert!(addr.starts_with("bc1p"), "P2TR should start with bc1p: {addr}");
+        assert!(
+            addr.starts_with("bc1p"),
+            "P2TR should start with bc1p: {addr}"
+        );
     }
 
     #[cfg(feature = "bitcoin")]
@@ -1087,15 +1226,19 @@ mod tests {
         use crate::bitcoin::transaction::*;
         let mut tx = Transaction::new(2);
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: [0xAA; 32], vout: 0 },
+            previous_output: OutPoint {
+                txid: [0xAA; 32],
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFF,
         });
         tx.outputs.push(TxOut {
             value: 50_000,
-            script_pubkey: vec![0x00, 0x14, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
-                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
-                0xBB, 0xBB, 0xBB, 0xBB],
+            script_pubkey: vec![
+                0x00, 0x14, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+            ],
         });
         let raw = tx.serialize_legacy();
         let parsed = parse_unsigned_tx(&raw).unwrap();

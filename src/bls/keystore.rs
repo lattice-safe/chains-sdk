@@ -8,10 +8,10 @@
 
 use crate::error::SignerError;
 use aes::cipher::{KeyIvInit, StreamCipher};
+use core::fmt;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
-use core::fmt;
 
 /// AES-128-CTR cipher type alias.
 type Aes128Ctr = ctr::Ctr64BE<aes::Aes128>;
@@ -95,15 +95,12 @@ impl BlsKeystore {
         }
 
         let mut salt = vec![0u8; 32];
-        getrandom::getrandom(&mut salt)
-            .map_err(|e| SignerError::SigningFailed(format!("RNG failed: {e}")))?;
+        crate::security::secure_random(&mut salt)?;
         let mut iv = vec![0u8; 16];
-        getrandom::getrandom(&mut iv)
-            .map_err(|e| SignerError::SigningFailed(format!("RNG failed: {e}")))?;
+        crate::security::secure_random(&mut iv)?;
 
         let mut uuid_bytes = [0u8; 16];
-        getrandom::getrandom(&mut uuid_bytes)
-            .map_err(|e| SignerError::SigningFailed(format!("RNG failed: {e}")))?;
+        crate::security::secure_random(&mut uuid_bytes)?;
         uuid_bytes[6] = (uuid_bytes[6] & 0x0F) | 0x40;
         uuid_bytes[8] = (uuid_bytes[8] & 0x3F) | 0x80;
         let uuid = format!(
@@ -113,8 +110,14 @@ impl BlsKeystore {
             u16::from_be_bytes([uuid_bytes[6], uuid_bytes[7]]),
             u16::from_be_bytes([uuid_bytes[8], uuid_bytes[9]]),
             u64::from_be_bytes([
-                0, 0, uuid_bytes[10], uuid_bytes[11],
-                uuid_bytes[12], uuid_bytes[13], uuid_bytes[14], uuid_bytes[15],
+                0,
+                0,
+                uuid_bytes[10],
+                uuid_bytes[11],
+                uuid_bytes[12],
+                uuid_bytes[13],
+                uuid_bytes[14],
+                uuid_bytes[15],
             ])
         );
 
@@ -156,7 +159,7 @@ impl BlsKeystore {
         hasher.update(&self.ciphertext);
         let expected = hasher.finalize();
 
-        if expected.as_slice().ct_eq(&self.checksum).unwrap_u8() == 0 {
+        if expected[..].ct_eq(&self.checksum).unwrap_u8() == 0 {
             return Err(SignerError::ParseError(
                 "EIP-2335: checksum mismatch (wrong password?)".into(),
             ));
@@ -181,8 +184,11 @@ impl BlsKeystore {
         j.push_str("{\"crypto\":{\"kdf\":{\"function\":\"scrypt\",\"params\":{");
         j.push_str(&format!(
             "\"dklen\":{},\"n\":{},\"r\":{},\"p\":{},\"salt\":\"{}\"",
-            self.scrypt_params.dklen, self.scrypt_params.n,
-            self.scrypt_params.r, self.scrypt_params.p, salt_hex
+            self.scrypt_params.dklen,
+            self.scrypt_params.n,
+            self.scrypt_params.r,
+            self.scrypt_params.p,
+            salt_hex
         ));
         j.push_str("},\"message\":\"\"},\"checksum\":{\"function\":\"sha256\",\"params\":{},\"message\":\"");
         j.push_str(&checksum_hex);
@@ -247,7 +253,8 @@ mod tests {
         let pk = [0xAA; 48];
         let password = b"test-password";
 
-        let keystore = BlsKeystore::encrypt(&sk, &pk, password, "m/12381/3600/0/0/0", &light()).unwrap();
+        let keystore =
+            BlsKeystore::encrypt(&sk, &pk, password, "m/12381/3600/0/0/0", &light()).unwrap();
         let decrypted = keystore.decrypt(password).unwrap();
         assert_eq!(&*decrypted, &sk);
     }
@@ -257,7 +264,8 @@ mod tests {
         let sk = [0x42u8; 32];
         let pk = [0xAA; 48];
 
-        let keystore = BlsKeystore::encrypt(&sk, &pk, b"correct", "m/12381/3600/0/0/0", &light()).unwrap();
+        let keystore =
+            BlsKeystore::encrypt(&sk, &pk, b"correct", "m/12381/3600/0/0/0", &light()).unwrap();
         let result = keystore.decrypt(b"wrong");
         assert!(result.is_err());
     }
@@ -267,7 +275,8 @@ mod tests {
         let sk = [0x42u8; 32];
         let pk = [0xBB; 48];
 
-        let keystore = BlsKeystore::encrypt(&sk, &pk, b"pass", "m/12381/3600/0/0/0", &light()).unwrap();
+        let keystore =
+            BlsKeystore::encrypt(&sk, &pk, b"pass", "m/12381/3600/0/0/0", &light()).unwrap();
         assert_eq!(keystore.pubkey, hex::encode(pk));
     }
 
@@ -276,7 +285,8 @@ mod tests {
         let sk = [0x42u8; 32];
         let pk = [0xAA; 48];
 
-        let keystore = BlsKeystore::encrypt(&sk, &pk, b"pass", "m/12381/3600/5/0/0", &light()).unwrap();
+        let keystore =
+            BlsKeystore::encrypt(&sk, &pk, b"pass", "m/12381/3600/5/0/0", &light()).unwrap();
         assert_eq!(keystore.path, "m/12381/3600/5/0/0");
     }
 
@@ -285,7 +295,8 @@ mod tests {
         let sk = [0x42u8; 32];
         let pk = [0xAA; 48];
 
-        let keystore = BlsKeystore::encrypt(&sk, &pk, b"pass", "m/12381/3600/0/0/0", &light()).unwrap();
+        let keystore =
+            BlsKeystore::encrypt(&sk, &pk, b"pass", "m/12381/3600/0/0/0", &light()).unwrap();
         let json = keystore.to_json();
 
         assert!(json.contains("\"version\":4"));
@@ -322,7 +333,9 @@ mod tests {
         let sk = signer.private_key_bytes();
         let pk = signer.public_key().to_bytes();
 
-        let keystore = BlsKeystore::encrypt(&sk, &pk, b"validator-pass", "m/12381/3600/0/0/0", &light()).unwrap();
+        let keystore =
+            BlsKeystore::encrypt(&sk, &pk, b"validator-pass", "m/12381/3600/0/0/0", &light())
+                .unwrap();
         let decrypted = keystore.decrypt(b"validator-pass").unwrap();
 
         let restored = BlsSigner::from_bytes(&decrypted).unwrap();

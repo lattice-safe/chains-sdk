@@ -38,6 +38,7 @@ frost = ["dep:k256"]
 musig2 = ["dep:k256"]
 bip85 = ["hd_key", "dep:hmac"]
 custom_rng = []
+mlock = ["dep:libc"]
 
 [dependencies]
 # ECDSA curves
@@ -66,6 +67,7 @@ pbkdf2 = { version = "0.12", features = ["hmac"], optional = true }
 subtle = "2.6"
 zeroize = { version = "1.8", features = ["derive"] }
 getrandom = "0.2"
+libc = { version = "0.2", optional = true }
 
 # Address encoding
 bs58 = "0.5"

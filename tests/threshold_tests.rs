@@ -19,7 +19,9 @@ mod frost_tests {
 
         // Verify all shares against VSS commitments
         for pkg in &kgen.key_packages {
-            assert!(kgen.vss_commitments.verify_share(pkg.identifier, pkg.secret_share()));
+            assert!(kgen
+                .vss_commitments
+                .verify_share(pkg.identifier, pkg.secret_share()));
         }
 
         // Participants 1 and 3 sign a message
@@ -33,12 +35,8 @@ mod frost_tests {
         let share3 = signing::sign(&kgen.key_packages[2], nonce3, &commitments, msg).unwrap();
 
         // Aggregate
-        let sig = signing::aggregate(
-            &commitments,
-            &[share1, share3],
-            &kgen.group_public_key,
-            msg,
-        ).unwrap();
+        let sig = signing::aggregate(&commitments, &[share1, share3], &kgen.group_public_key, msg)
+            .unwrap();
 
         // Verify
         assert!(signing::verify(&sig, &kgen.group_public_key, msg).unwrap());
@@ -60,12 +58,8 @@ mod frost_tests {
         let share1 = signing::sign(&kgen.key_packages[0], nonce1, &commitments, msg).unwrap();
         let share2 = signing::sign(&kgen.key_packages[1], nonce2, &commitments, msg).unwrap();
 
-        let sig = signing::aggregate(
-            &commitments,
-            &[share1, share2],
-            &kgen.group_public_key,
-            msg,
-        ).unwrap();
+        let sig = signing::aggregate(&commitments, &[share1, share2], &kgen.group_public_key, msg)
+            .unwrap();
 
         assert!(signing::verify(&sig, &kgen.group_public_key, msg).unwrap());
     }
@@ -94,12 +88,8 @@ mod frost_tests {
         let s3 = signing::sign(&kgen.key_packages[2], nonce3, &commitments, msg).unwrap();
         let s5 = signing::sign(&kgen.key_packages[4], nonce5, &commitments, msg).unwrap();
 
-        let sig = signing::aggregate(
-            &commitments,
-            &[s1, s3, s5],
-            &kgen.group_public_key,
-            msg,
-        ).unwrap();
+        let sig =
+            signing::aggregate(&commitments, &[s1, s3, s5], &kgen.group_public_key, msg).unwrap();
 
         assert!(signing::verify(&sig, &kgen.group_public_key, msg).unwrap());
     }
@@ -121,7 +111,8 @@ mod frost_tests {
             &[share1, share3],
             &kgen.group_public_key,
             b"msg A",
-        ).unwrap();
+        )
+        .unwrap();
 
         // Verify with different message
         assert!(!signing::verify(&sig, &kgen.group_public_key, b"msg B").unwrap());
@@ -151,7 +142,8 @@ mod frost_tests {
             &kgen.group_public_key,
             &commitments,
             msg,
-        ).unwrap());
+        )
+        .unwrap());
 
         assert!(signing::verify_share(
             &share3,
@@ -160,7 +152,8 @@ mod frost_tests {
             &kgen.group_public_key,
             &commitments,
             msg,
-        ).unwrap());
+        )
+        .unwrap());
     }
 
     #[test]
@@ -180,10 +173,7 @@ mod frost_tests {
         let kgen = keygen::trusted_dealer_keygen(&secret, 2, 3).unwrap();
 
         // Any 2 shares should reconstruct the secret
-        let ids = [
-            k256::Scalar::from(1u64),
-            k256::Scalar::from(2u64),
-        ];
+        let ids = [k256::Scalar::from(1u64), k256::Scalar::from(2u64)];
         let shares = [
             *kgen.key_packages[0].secret_share(),
             *kgen.key_packages[1].secret_share(),
@@ -212,9 +202,8 @@ mod frost_tests {
     // participant_list: 1, 3
     #[test]
     fn test_rfc9591_group_public_key() {
-        let group_secret = hex_to_32(
-            "0d004150d27c3bf2a42f312683d35fac7394b1e9e318249c1bfe7f0795a83114",
-        );
+        let group_secret =
+            hex_to_32("0d004150d27c3bf2a42f312683d35fac7394b1e9e318249c1bfe7f0795a83114");
         let expected_pk = "02f37c34b66ced1fb51c34a90bdae006901f10625cc06c4f64663b0eae87d87b4f";
 
         let s = keygen::scalar_from_bytes(&group_secret).unwrap();
@@ -227,12 +216,9 @@ mod frost_tests {
 
     #[test]
     fn test_rfc9591_participant_shares() {
-        let group_secret = hex_to_32(
-            "0d004150d27c3bf2a42f312683d35fac7394b1e9e318249c1bfe7f0795a83114",
-        );
-        let coeff1 = hex_to_32(
-            "fbf85eadae3058ea14f19148bb72b45e4399c0b16028acaf0395c9b03c823579",
-        );
+        let group_secret =
+            hex_to_32("0d004150d27c3bf2a42f312683d35fac7394b1e9e318249c1bfe7f0795a83114");
+        let coeff1 = hex_to_32("fbf85eadae3058ea14f19148bb72b45e4399c0b16028acaf0395c9b03c823579");
 
         // Build polynomial coefficients manually
         let s = keygen::scalar_from_bytes(&group_secret).unwrap();
@@ -282,7 +268,10 @@ mod frost_tests {
 
         let msg = b"5-of-7 threshold";
         let indices = [0, 1, 3, 5, 6]; // participants 1,2,4,6,7
-        let nonces: Vec<_> = indices.iter().map(|&i| signing::commit(&kgen.key_packages[i]).unwrap()).collect();
+        let nonces: Vec<_> = indices
+            .iter()
+            .map(|&i| signing::commit(&kgen.key_packages[i]).unwrap())
+            .collect();
         let commits: Vec<_> = nonces.iter().map(|n| n.commitments.clone()).collect();
         let mut shares = Vec::new();
         for (idx, nonce) in indices.iter().zip(nonces.into_iter()) {
@@ -300,7 +289,11 @@ mod frost_tests {
         let n1 = signing::commit(&kgen.key_packages[0]).unwrap();
         let n2 = signing::commit(&kgen.key_packages[1]).unwrap();
         let n3 = signing::commit(&kgen.key_packages[2]).unwrap();
-        let commits = vec![n1.commitments.clone(), n2.commitments.clone(), n3.commitments.clone()];
+        let commits = vec![
+            n1.commitments.clone(),
+            n2.commitments.clone(),
+            n3.commitments.clone(),
+        ];
         let s1 = signing::sign(&kgen.key_packages[0], n1, &commits, msg).unwrap();
         let s2 = signing::sign(&kgen.key_packages[1], n2, &commits, msg).unwrap();
         let s3 = signing::sign(&kgen.key_packages[2], n3, &commits, msg).unwrap();
@@ -316,7 +309,10 @@ mod frost_tests {
         // Same secret → same group public key
         assert_eq!(kgen1.group_public_key, kgen2.group_public_key);
         // But shares are different (random coefficients)
-        assert_ne!(kgen1.key_packages[0].secret_share(), kgen2.key_packages[0].secret_share());
+        assert_ne!(
+            kgen1.key_packages[0].secret_share(),
+            kgen2.key_packages[0].secret_share()
+        );
     }
 
     #[test]
@@ -338,7 +334,9 @@ mod frost_tests {
     fn test_frost_vss_zero_identifier_rejected() {
         let secret = [0x42u8; 32];
         let kgen = keygen::trusted_dealer_keygen(&secret, 2, 3).unwrap();
-        assert!(!kgen.vss_commitments.verify_share(0, kgen.key_packages[0].secret_share()));
+        assert!(!kgen
+            .vss_commitments
+            .verify_share(0, kgen.key_packages[0].secret_share()));
     }
 
     #[test]

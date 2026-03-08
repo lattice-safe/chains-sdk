@@ -3,7 +3,7 @@
 
 #[cfg(feature = "ethereum")]
 mod eth_serde {
-    use trad_signer::ethereum::{EthereumSigner, EthereumVerifier, EthereumSignature};
+    use trad_signer::ethereum::{EthereumSignature, EthereumSigner, EthereumVerifier};
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     #[test]
@@ -19,9 +19,9 @@ mod eth_serde {
         let signer = EthereumSigner::generate().unwrap();
         let sig = signer.sign(b"test").unwrap();
         // Create verifier from uncompressed key
-        let verifier = EthereumVerifier::from_public_key_bytes(
-            &signer.public_key_bytes_uncompressed(),
-        ).unwrap();
+        let verifier =
+            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes_uncompressed())
+                .unwrap();
         assert!(verifier.verify(b"test", &sig).unwrap());
     }
 
@@ -54,8 +54,8 @@ mod eth_serde {
 
 #[cfg(feature = "bitcoin")]
 mod btc_serde {
-    use trad_signer::bitcoin::{BitcoinSigner, BitcoinVerifier, BitcoinSignature};
-    use trad_signer::bitcoin::schnorr::{SchnorrSigner, SchnorrSignature};
+    use trad_signer::bitcoin::schnorr::{SchnorrSignature, SchnorrSigner};
+    use trad_signer::bitcoin::{BitcoinSignature, BitcoinSigner, BitcoinVerifier};
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     #[test]
@@ -70,9 +70,9 @@ mod btc_serde {
     fn test_verifier_accepts_uncompressed() {
         let signer = BitcoinSigner::generate().unwrap();
         let sig = signer.sign(b"test").unwrap();
-        let verifier = BitcoinVerifier::from_public_key_bytes(
-            &signer.public_key_bytes_uncompressed(),
-        ).unwrap();
+        let verifier =
+            BitcoinVerifier::from_public_key_bytes(&signer.public_key_bytes_uncompressed())
+                .unwrap();
         assert!(verifier.verify(b"test", &sig).unwrap());
     }
 
@@ -107,7 +107,7 @@ mod btc_serde {
 
 #[cfg(feature = "neo")]
 mod neo_serde {
-    use trad_signer::neo::{NeoSigner, NeoVerifier, NeoSignature};
+    use trad_signer::neo::{NeoSignature, NeoSigner, NeoVerifier};
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     #[test]
@@ -122,9 +122,8 @@ mod neo_serde {
     fn test_verifier_accepts_uncompressed() {
         let signer = NeoSigner::generate().unwrap();
         let sig = signer.sign(b"test").unwrap();
-        let verifier = NeoVerifier::from_public_key_bytes(
-            &signer.public_key_bytes_uncompressed(),
-        ).unwrap();
+        let verifier =
+            NeoVerifier::from_public_key_bytes(&signer.public_key_bytes_uncompressed()).unwrap();
         assert!(verifier.verify(b"test", &sig).unwrap());
     }
 
@@ -140,7 +139,7 @@ mod neo_serde {
 
 #[cfg(feature = "solana")]
 mod solana_serde {
-    use trad_signer::solana::{SolanaSigner, SolanaSignature};
+    use trad_signer::solana::{SolanaSignature, SolanaSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -180,9 +179,8 @@ mod solana_serde {
 
     #[test]
     fn test_scalar_deterministic() {
-        let seed = hex::decode(
-            "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
-        ).unwrap();
+        let seed = hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+            .unwrap();
         let s1 = SolanaSigner::from_bytes(&seed).unwrap();
         let s2 = SolanaSigner::from_bytes(&seed).unwrap();
         assert_eq!(s1.scalar_bytes().to_vec(), s2.scalar_bytes().to_vec());
@@ -202,14 +200,17 @@ mod solana_serde {
         let signer = SolanaSigner::generate().unwrap();
         assert_eq!(signer.public_key_bytes().len(), 32);
         assert_eq!(signer.public_key_bytes_uncompressed().len(), 32);
-        assert_eq!(signer.public_key_bytes(), signer.public_key_bytes_uncompressed());
+        assert_eq!(
+            signer.public_key_bytes(),
+            signer.public_key_bytes_uncompressed()
+        );
     }
 }
 
 #[cfg(feature = "xrp")]
 mod xrp_serde {
-    use trad_signer::xrp::{XrpEcdsaSigner, XrpEddsaSigner, XrpSignature};
     use trad_signer::traits::{KeyPair, Signer};
+    use trad_signer::xrp::{XrpEcdsaSigner, XrpEddsaSigner, XrpSignature};
 
     #[test]
     fn test_ecdsa_uncompressed_65() {
@@ -222,7 +223,10 @@ mod xrp_serde {
     #[test]
     fn test_eddsa_pubkey_same() {
         let signer = XrpEddsaSigner::generate().unwrap();
-        assert_eq!(signer.public_key_bytes(), signer.public_key_bytes_uncompressed());
+        assert_eq!(
+            signer.public_key_bytes(),
+            signer.public_key_bytes_uncompressed()
+        );
     }
 
     #[test]
@@ -242,7 +246,7 @@ mod xrp_serde {
 
 #[cfg(feature = "bls")]
 mod bls_serde {
-    use trad_signer::bls::{BlsSigner, BlsSignature, BlsPublicKey};
+    use trad_signer::bls::{BlsPublicKey, BlsSignature, BlsSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -276,7 +280,10 @@ mod bls_serde {
     #[test]
     fn test_pubkey_same_compressed_uncompressed() {
         let signer = BlsSigner::generate().unwrap();
-        assert_eq!(signer.public_key_bytes(), signer.public_key_bytes_uncompressed());
+        assert_eq!(
+            signer.public_key_bytes(),
+            signer.public_key_bytes_uncompressed()
+        );
     }
 }
 
@@ -284,7 +291,7 @@ mod bls_serde {
 
 #[cfg(all(feature = "serde", feature = "ethereum"))]
 mod json_eth {
-    use trad_signer::ethereum::{EthereumSigner, EthereumSignature};
+    use trad_signer::ethereum::{EthereumSignature, EthereumSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -301,8 +308,8 @@ mod json_eth {
 
 #[cfg(all(feature = "serde", feature = "bitcoin"))]
 mod json_btc {
-    use trad_signer::bitcoin::{BitcoinSigner, BitcoinSignature};
-    use trad_signer::bitcoin::schnorr::{SchnorrSigner, SchnorrSignature};
+    use trad_signer::bitcoin::schnorr::{SchnorrSignature, SchnorrSigner};
+    use trad_signer::bitcoin::{BitcoinSignature, BitcoinSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -327,7 +334,7 @@ mod json_btc {
 
 #[cfg(all(feature = "serde", feature = "solana"))]
 mod json_sol {
-    use trad_signer::solana::{SolanaSigner, SolanaSignature};
+    use trad_signer::solana::{SolanaSignature, SolanaSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -342,7 +349,7 @@ mod json_sol {
 
 #[cfg(all(feature = "serde", feature = "neo"))]
 mod json_neo {
-    use trad_signer::neo::{NeoSigner, NeoSignature};
+    use trad_signer::neo::{NeoSignature, NeoSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -357,8 +364,8 @@ mod json_neo {
 
 #[cfg(all(feature = "serde", feature = "xrp"))]
 mod json_xrp {
-    use trad_signer::xrp::{XrpEcdsaSigner, XrpSignature};
     use trad_signer::traits::{KeyPair, Signer};
+    use trad_signer::xrp::{XrpEcdsaSigner, XrpSignature};
 
     #[test]
     fn test_xrp_sig_json_roundtrip() {
@@ -372,7 +379,7 @@ mod json_xrp {
 
 #[cfg(all(feature = "serde", feature = "bls"))]
 mod json_bls {
-    use trad_signer::bls::{BlsSigner, BlsSignature, BlsPublicKey};
+    use trad_signer::bls::{BlsPublicKey, BlsSignature, BlsSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]

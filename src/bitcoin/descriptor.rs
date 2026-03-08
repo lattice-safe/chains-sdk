@@ -33,8 +33,8 @@ pub enum DescriptorKey {
 impl DescriptorKey {
     /// Parse a hex-encoded public key.
     pub fn from_hex(hex_str: &str) -> Result<Self, SignerError> {
-        let bytes = hex::decode(hex_str)
-            .map_err(|e| SignerError::ParseError(format!("hex: {e}")))?;
+        let bytes =
+            hex::decode(hex_str).map_err(|e| SignerError::ParseError(format!("hex: {e}")))?;
         match bytes.len() {
             33 => {
                 let mut key = [0u8; 33];
@@ -122,9 +122,9 @@ impl Descriptor {
     pub fn script_pubkey(&self) -> Result<Vec<u8>, SignerError> {
         match self {
             Descriptor::Pkh(key) => {
-                let hash = key
-                    .hash160()
-                    .ok_or(SignerError::ParseError("pkh requires compressed key".into()))?;
+                let hash = key.hash160().ok_or(SignerError::ParseError(
+                    "pkh requires compressed key".into(),
+                ))?;
                 // OP_DUP OP_HASH160 OP_PUSH20 <hash> OP_EQUALVERIFY OP_CHECKSIG
                 let mut script = Vec::with_capacity(25);
                 script.push(0x76); // OP_DUP
@@ -136,9 +136,9 @@ impl Descriptor {
                 Ok(script)
             }
             Descriptor::Wpkh(key) => {
-                let hash = key
-                    .hash160()
-                    .ok_or(SignerError::ParseError("wpkh requires compressed key".into()))?;
+                let hash = key.hash160().ok_or(SignerError::ParseError(
+                    "wpkh requires compressed key".into(),
+                ))?;
                 // OP_0 OP_PUSH20 <hash>
                 let mut script = Vec::with_capacity(22);
                 script.push(0x00); // OP_0
@@ -197,9 +197,9 @@ impl Descriptor {
     pub fn address(&self, hrp: &str) -> Result<String, SignerError> {
         match self {
             Descriptor::Pkh(key) => {
-                let hash = key
-                    .hash160()
-                    .ok_or(SignerError::ParseError("pkh requires compressed key".into()))?;
+                let hash = key.hash160().ok_or(SignerError::ParseError(
+                    "pkh requires compressed key".into(),
+                ))?;
                 let prefix = if hrp == "bc" || hrp == "mainnet" {
                     0x00u8
                 } else {
@@ -208,9 +208,9 @@ impl Descriptor {
                 Ok(encoding::base58check_encode(prefix, &hash))
             }
             Descriptor::Wpkh(key) => {
-                let hash = key
-                    .hash160()
-                    .ok_or(SignerError::ParseError("wpkh requires compressed key".into()))?;
+                let hash = key.hash160().ok_or(SignerError::ParseError(
+                    "wpkh requires compressed key".into(),
+                ))?;
                 encoding::bech32_encode(hrp, 0, &hash)
             }
             Descriptor::ShWpkh(_) => {
@@ -292,8 +292,7 @@ pub fn parse(descriptor: &str) -> Result<Descriptor, SignerError> {
         let key = DescriptorKey::from_hex(inner)?;
         Ok(Descriptor::tr(key))
     } else if let Some(inner) = strip_wrapper(desc, "raw(", ")") {
-        let bytes =
-            hex::decode(inner).map_err(|e| SignerError::ParseError(format!("hex: {e}")))?;
+        let bytes = hex::decode(inner).map_err(|e| SignerError::ParseError(format!("hex: {e}")))?;
         Ok(Descriptor::Raw(bytes))
     } else {
         Err(SignerError::ParseError(format!(
@@ -418,10 +417,7 @@ mod tests {
         let h = key.hash160().expect("compressed key");
         assert_eq!(h.len(), 20);
         // Generator point HASH160 is well-known
-        assert_eq!(
-            hex::encode(h),
-            "751e76e8199196d454941c45d1b3a323f1433bd6"
-        );
+        assert_eq!(hex::encode(h), "751e76e8199196d454941c45d1b3a323f1433bd6");
     }
 
     #[test]

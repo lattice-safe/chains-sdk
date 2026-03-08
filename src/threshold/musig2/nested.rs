@@ -21,8 +21,7 @@ use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, ProjectivePoint, Scalar};
 
 use super::signing::{
-    self, KeyAggContext, AggNonce, PubNonce, PartialSignature,
-    compute_nonce_coeff,
+    self, compute_nonce_coeff, AggNonce, KeyAggContext, PartialSignature, PubNonce,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -76,10 +75,17 @@ pub fn verify_partial_sig(
     let e = tagged_hash_scalar(b"BIP0340/challenge", &challenge_data);
 
     // Find the signer's aggregation coefficient
-    let signer_idx = key_agg_ctx.pubkeys.iter().position(|pk| pk == signer_pubkey);
+    let signer_idx = key_agg_ctx
+        .pubkeys
+        .iter()
+        .position(|pk| pk == signer_pubkey);
     let signer_idx = match signer_idx {
         Some(idx) => idx,
-        None => return Err(SignerError::SigningFailed("signer not in key_agg context".into())),
+        None => {
+            return Err(SignerError::SigningFailed(
+                "signer not in key_agg context".into(),
+            ))
+        }
     };
     let a_i = key_agg_ctx.coefficients[signer_idx];
 
@@ -96,7 +102,11 @@ pub fn verify_partial_sig(
     let effective_ri = if nonce_negated { -ri } else { ri };
 
     // Effective public key (negate if aggregate key has odd y)
-    let effective_pk = if key_agg_ctx.parity { -pk_point } else { pk_point };
+    let effective_pk = if key_agg_ctx.parity {
+        -pk_point
+    } else {
+        pk_point
+    };
 
     // LHS: s_i * G
     let lhs = ProjectivePoint::GENERATOR * partial_sig.s;
@@ -185,9 +195,7 @@ impl KeyTreeNode {
 ///
 /// All keys are leaves under a single internal aggregation node.
 pub fn flat_key_tree(pubkeys: &[[u8; 33]]) -> KeyTreeNode {
-    KeyTreeNode::Internal(
-        pubkeys.iter().map(|pk| KeyTreeNode::Leaf(*pk)).collect()
-    )
+    KeyTreeNode::Internal(pubkeys.iter().map(|pk| KeyTreeNode::Leaf(*pk)).collect())
 }
 
 /// Build a 2-level key tree where each group is a sub-aggregation.
@@ -208,12 +216,10 @@ pub fn grouped_key_tree(groups: &[Vec<[u8; 33]>]) -> KeyTreeNode {
                 if group.len() == 1 {
                     KeyTreeNode::Leaf(group[0])
                 } else {
-                    KeyTreeNode::Internal(
-                        group.iter().map(|pk| KeyTreeNode::Leaf(*pk)).collect()
-                    )
+                    KeyTreeNode::Internal(group.iter().map(|pk| KeyTreeNode::Leaf(*pk)).collect())
                 }
             })
-            .collect()
+            .collect(),
     )
 }
 
@@ -233,8 +239,8 @@ fn tagged_hash_scalar(tag: &[u8], data: &[u8]) -> Scalar {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::*;
     use super::super::signing;
+    use super::*;
 
     fn make_keys() -> ([u8; 32], [u8; 32], [u8; 33], [u8; 33]) {
         let sk1 = [0x11u8; 32];
@@ -275,7 +281,9 @@ mod tests {
         let psig1 = signing::sign(sec1, &sk1, &ctx, &agg_nonce, msg).unwrap();
 
         // Tamper
-        let tampered = PartialSignature { s: psig1.s + Scalar::ONE };
+        let tampered = PartialSignature {
+            s: psig1.s + Scalar::ONE,
+        };
         let valid = verify_partial_sig(&tampered, &pub1, &pk1, &ctx, &agg_nonce, msg).unwrap();
         assert!(!valid, "tampered partial sig must fail");
     }
@@ -321,10 +329,7 @@ mod tests {
 
         // 2-level tree: agg(agg(pk1, pk2), pk3)
         let tree = KeyTreeNode::Internal(vec![
-            KeyTreeNode::Internal(vec![
-                KeyTreeNode::Leaf(pk1),
-                KeyTreeNode::Leaf(pk2),
-            ]),
+            KeyTreeNode::Internal(vec![KeyTreeNode::Leaf(pk1), KeyTreeNode::Leaf(pk2)]),
             KeyTreeNode::Leaf(pk3),
         ]);
 
@@ -377,6 +382,9 @@ mod tests {
             KeyTreeNode::Leaf(pk3),
         ]);
 
-        assert_eq!(tree1.effective_pubkey().unwrap(), tree2.effective_pubkey().unwrap());
+        assert_eq!(
+            tree1.effective_pubkey().unwrap(),
+            tree2.effective_pubkey().unwrap()
+        );
     }
 }

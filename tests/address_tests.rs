@@ -2,7 +2,7 @@
 
 #[cfg(feature = "ethereum")]
 mod ethereum {
-    use trad_signer::ethereum::{EthereumSigner, eip55_checksum, ecrecover};
+    use trad_signer::ethereum::{ecrecover, eip55_checksum, EthereumSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -45,7 +45,7 @@ mod ethereum {
 
     #[test]
     fn test_ecrecover_personal_sign() {
-        use trad_signer::ethereum::{eip191_hash, ecrecover_digest};
+        use trad_signer::ethereum::{ecrecover_digest, eip191_hash};
         let signer = EthereumSigner::generate().unwrap();
         let msg = b"personal sign recovery test";
         let sig = signer.personal_sign(msg).unwrap();
@@ -65,35 +65,46 @@ mod ethereum {
 
 #[cfg(feature = "bitcoin")]
 mod bitcoin {
-    use trad_signer::bitcoin::BitcoinSigner;
     use trad_signer::bitcoin::schnorr::SchnorrSigner;
+    use trad_signer::bitcoin::BitcoinSigner;
     use trad_signer::traits::KeyPair;
 
     #[test]
     fn test_p2pkh_address_starts_with_1() {
         let signer = BitcoinSigner::generate().unwrap();
         let addr = signer.p2pkh_address();
-        assert!(addr.starts_with('1'), "P2PKH should start with '1', got: {addr}");
+        assert!(
+            addr.starts_with('1'),
+            "P2PKH should start with '1', got: {addr}"
+        );
     }
 
     #[test]
     fn test_p2wpkh_address_starts_with_bc1q() {
         let signer = BitcoinSigner::generate().unwrap();
         let addr = signer.p2wpkh_address().unwrap();
-        assert!(addr.starts_with("bc1q"), "P2WPKH should start with 'bc1q', got: {addr}");
+        assert!(
+            addr.starts_with("bc1q"),
+            "P2WPKH should start with 'bc1q', got: {addr}"
+        );
     }
 
     #[test]
     fn test_p2tr_address_starts_with_bc1p() {
         let signer = SchnorrSigner::generate().unwrap();
         let addr = signer.p2tr_address().unwrap();
-        assert!(addr.starts_with("bc1p"), "P2TR should start with 'bc1p', got: {addr}");
+        assert!(
+            addr.starts_with("bc1p"),
+            "P2TR should start with 'bc1p', got: {addr}"
+        );
     }
 
     #[test]
     fn test_p2pkh_known_vector() {
         // Private key = 1 -> known Bitcoin address
-        let privkey = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let privkey =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap();
         let signer = BitcoinSigner::from_bytes(&privkey).unwrap();
         let addr = signer.p2pkh_address();
         // Private key 1 -> compressed pubkey 02..98 -> P2PKH = 1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH
@@ -102,7 +113,9 @@ mod bitcoin {
 
     #[test]
     fn test_p2wpkh_known_vector() {
-        let privkey = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let privkey =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap();
         let signer = BitcoinSigner::from_bytes(&privkey).unwrap();
         let addr = signer.p2wpkh_address().unwrap();
         assert!(addr.starts_with("bc1q"), "expected bc1q, got: {addr}");
@@ -112,7 +125,9 @@ mod bitcoin {
 
     #[test]
     fn test_addresses_deterministic() {
-        let privkey = hex::decode("0000000000000000000000000000000000000000000000000000000000000002").unwrap();
+        let privkey =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000002")
+                .unwrap();
         let s1 = BitcoinSigner::from_bytes(&privkey).unwrap();
         let s2 = BitcoinSigner::from_bytes(&privkey).unwrap();
         assert_eq!(s1.p2pkh_address(), s2.p2pkh_address());
@@ -130,7 +145,11 @@ mod solana {
         let signer = SolanaSigner::generate().unwrap();
         let addr = signer.address();
         // Solana addresses are 32-44 chars Base58
-        assert!(addr.len() >= 32 && addr.len() <= 44, "unexpected length: {}", addr.len());
+        assert!(
+            addr.len() >= 32 && addr.len() <= 44,
+            "unexpected length: {}",
+            addr.len()
+        );
         // Must decode back to 32 bytes
         let decoded = bs58::decode(&addr).into_vec().unwrap();
         assert_eq!(decoded.len(), 32);
@@ -149,21 +168,27 @@ mod solana {
 
 #[cfg(feature = "xrp")]
 mod xrp {
-    use trad_signer::xrp::{XrpEcdsaSigner, XrpEddsaSigner};
     use trad_signer::traits::KeyPair;
+    use trad_signer::xrp::{XrpEcdsaSigner, XrpEddsaSigner};
 
     #[test]
     fn test_xrp_ecdsa_address_starts_with_r() {
         let signer = XrpEcdsaSigner::generate().unwrap();
         let addr = signer.address().unwrap();
-        assert!(addr.starts_with('r'), "XRP address should start with 'r', got: {addr}");
+        assert!(
+            addr.starts_with('r'),
+            "XRP address should start with 'r', got: {addr}"
+        );
     }
 
     #[test]
     fn test_xrp_eddsa_address_starts_with_r() {
         let signer = XrpEddsaSigner::generate().unwrap();
         let addr = signer.address().unwrap();
-        assert!(addr.starts_with('r'), "XRP address should start with 'r', got: {addr}");
+        assert!(
+            addr.starts_with('r'),
+            "XRP address should start with 'r', got: {addr}"
+        );
     }
 
     #[test]
@@ -175,7 +200,9 @@ mod xrp {
 
     #[test]
     fn test_xrp_address_deterministic() {
-        let privkey = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let privkey =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap();
         let s1 = XrpEcdsaSigner::from_bytes(&privkey).unwrap();
         let s2 = XrpEcdsaSigner::from_bytes(&privkey).unwrap();
         assert_eq!(s1.address().unwrap(), s2.address().unwrap());
@@ -191,7 +218,10 @@ mod neo {
     fn test_neo_address_starts_with_a() {
         let signer = NeoSigner::generate().unwrap();
         let addr = signer.address();
-        assert!(addr.starts_with('A'), "NEO address should start with 'A', got: {addr}");
+        assert!(
+            addr.starts_with('A'),
+            "NEO address should start with 'A', got: {addr}"
+        );
     }
 
     #[test]
@@ -203,7 +233,9 @@ mod neo {
 
     #[test]
     fn test_neo_address_deterministic() {
-        let privkey = hex::decode("708309a7449e156b0db70e5b52e606c7e094ed676ce8953bf6c14757c826f590").unwrap();
+        let privkey =
+            hex::decode("708309a7449e156b0db70e5b52e606c7e094ed676ce8953bf6c14757c826f590")
+                .unwrap();
         let s1 = NeoSigner::from_bytes(&privkey).unwrap();
         let s2 = NeoSigner::from_bytes(&privkey).unwrap();
         assert_eq!(s1.address(), s2.address());
@@ -214,7 +246,12 @@ mod neo {
         let signer = NeoSigner::generate().unwrap();
         let addr = signer.address();
         // NEO addresses are 34 characters (Base58Check)
-        assert_eq!(addr.len(), 34, "NEO address should be 34 chars, got: {}", addr.len());
+        assert_eq!(
+            addr.len(),
+            34,
+            "NEO address should be 34 chars, got: {}",
+            addr.len()
+        );
     }
 
     #[test]
@@ -235,29 +272,38 @@ mod neo {
 
 #[cfg(feature = "ethereum")]
 mod eth_validation {
-    use trad_signer::ethereum::{EthereumSigner, validate_address};
+    use trad_signer::ethereum::{validate_address, EthereumSigner};
     use trad_signer::traits::KeyPair;
 
     #[test]
     fn test_validate_eip55_checksummed() {
         let signer = EthereumSigner::generate().unwrap();
         let addr = signer.address_checksum();
-        assert!(validate_address(&addr), "checksummed address should be valid: {addr}");
+        assert!(
+            validate_address(&addr),
+            "checksummed address should be valid: {addr}"
+        );
     }
 
     #[test]
     fn test_validate_all_lowercase() {
-        assert!(validate_address("0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"));
+        assert!(validate_address(
+            "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"
+        ));
     }
 
     #[test]
     fn test_validate_correct_eip55() {
-        assert!(validate_address("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"));
+        assert!(validate_address(
+            "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+        ));
     }
 
     #[test]
     fn test_validate_wrong_eip55_checksum() {
-        assert!(!validate_address("0x5AAEB6053f3e94c9b9A09f33669435E7Ef1BeAed"));
+        assert!(!validate_address(
+            "0x5AAEB6053f3e94c9b9A09f33669435E7Ef1BeAed"
+        ));
     }
 
     #[test]
@@ -267,18 +313,22 @@ mod eth_validation {
 
     #[test]
     fn test_validate_no_prefix() {
-        assert!(!validate_address("5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"));
+        assert!(!validate_address(
+            "5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+        ));
     }
 
     #[test]
     fn test_validate_invalid_hex() {
-        assert!(!validate_address("0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"));
+        assert!(!validate_address(
+            "0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+        ));
     }
 }
 
 #[cfg(feature = "solana")]
 mod sol_validation {
-    use trad_signer::solana::{SolanaSigner, validate_address};
+    use trad_signer::solana::{validate_address, SolanaSigner};
     use trad_signer::traits::KeyPair;
 
     #[test]
@@ -300,8 +350,8 @@ mod sol_validation {
 
 #[cfg(feature = "xrp")]
 mod xrp_validation {
-    use trad_signer::xrp::{XrpEcdsaSigner, XrpEddsaSigner, validate_address};
     use trad_signer::traits::KeyPair;
+    use trad_signer::xrp::{validate_address, XrpEcdsaSigner, XrpEddsaSigner};
 
     #[test]
     fn test_validate_ecdsa_address() {

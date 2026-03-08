@@ -8,8 +8,8 @@
 //! 2. `derive_child_sk(parent_sk, index)` — Derive child key at an index.
 //! 3. `derive_key_from_path(seed, path)` — Derive key at a full path `m/12381/3600/0/0/0`.
 
-use crate::error::SignerError;
 use super::{BlsPublicKey, BlsSigner};
+use crate::error::SignerError;
 
 use blst::min_pk::SecretKey;
 use hmac::{Hmac, Mac};
@@ -21,10 +21,8 @@ type HmacSha256 = Hmac<Sha256>;
 /// The BLS12-381 scalar field order r (for reference).
 #[allow(dead_code)]
 const R_BYTES: [u8; 32] = [
-    0x73, 0xed, 0xa7, 0x53, 0x29, 0x9d, 0x7d, 0x48,
-    0x33, 0x39, 0xd8, 0x08, 0x09, 0xa1, 0xd8, 0x05,
-    0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe,
-    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
+    0x73, 0xed, 0xa7, 0x53, 0x29, 0x9d, 0x7d, 0x48, 0x33, 0x39, 0xd8, 0x08, 0x09, 0xa1, 0xd8, 0x05,
+    0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -111,10 +109,7 @@ pub fn derive_child_sk(
 /// Derive a secret key from a path (e.g., `m/12381/3600/0/0/0`).
 ///
 /// The path is specified as a slice of indices, e.g., `[12381, 3600, 0, 0, 0]`.
-pub fn derive_key_from_path(
-    seed: &[u8],
-    path: &[u32],
-) -> Result<Zeroizing<[u8; 32]>, SignerError> {
+pub fn derive_key_from_path(seed: &[u8], path: &[u32]) -> Result<Zeroizing<[u8; 32]>, SignerError> {
     let master = derive_master_sk(seed)?;
     let mut current = Zeroizing::new(*master);
 
@@ -129,20 +124,14 @@ pub fn derive_key_from_path(
 /// Create a `BlsSigner` from a derived key at an EIP-2334 validator signing path.
 ///
 /// Path: `m/12381/3600/{validator_index}/0/0`
-pub fn validator_signer(
-    seed: &[u8],
-    validator_index: u32,
-) -> Result<BlsSigner, SignerError> {
+pub fn validator_signer(seed: &[u8], validator_index: u32) -> Result<BlsSigner, SignerError> {
     let path = [12381, 3600, validator_index, 0, 0];
     let sk = derive_key_from_path(seed, &path)?;
     crate::traits::KeyPair::from_bytes(&*sk)
 }
 
 /// Get the public key for a validator at a given index.
-pub fn validator_pubkey(
-    seed: &[u8],
-    validator_index: u32,
-) -> Result<BlsPublicKey, SignerError> {
+pub fn validator_pubkey(seed: &[u8], validator_index: u32) -> Result<BlsPublicKey, SignerError> {
     let signer = validator_signer(seed, validator_index)?;
     Ok(signer.public_key())
 }
@@ -181,14 +170,11 @@ fn hkdf_mod_r(ikm: &[u8]) -> Result<Zeroizing<[u8; 32]>, SignerError> {
 ///
 /// This is NOT a real Lamport OTS — it's a PRF-based construction that
 /// provides domain separation for child key derivation.
-fn derive_lamport_pk(
-    parent_sk: &[u8; 32],
-    index: u32,
-) -> Result<Vec<u8>, SignerError> {
+fn derive_lamport_pk(parent_sk: &[u8; 32], index: u32) -> Result<Vec<u8>, SignerError> {
     let salt = index.to_be_bytes();
 
     // Generate 32 chunks of 32 bytes each using HMAC-SHA256
-    let mut lamport_0 = Vec::with_capacity(32 * 32);
+    let mut lamport_0 = Zeroizing::new(Vec::with_capacity(32 * 32));
     let ikm = parent_sk;
 
     // PRK = HMAC-SHA256(salt, ikm)
@@ -216,7 +202,7 @@ fn derive_lamport_pk(
     mac.update(&*not_ikm);
     let prk_flip = mac.finalize().into_bytes();
 
-    let mut lamport_1 = Vec::with_capacity(32 * 32);
+    let mut lamport_1 = Zeroizing::new(Vec::with_capacity(32 * 32));
     for i in 0u8..32 {
         let mut mac = HmacSha256::new_from_slice(&prk_flip)
             .map_err(|_| SignerError::SigningFailed("HMAC init failed".into()))?;
@@ -370,9 +356,9 @@ mod tests {
         // Verify we can create a signer from the derived key
         let signer = BlsSigner::from_bytes(&*sk).unwrap();
         let sig = signer.sign(b"eip2333 test").unwrap();
-        let verifier = crate::bls::BlsVerifier::from_public_key_bytes(
-            &Signer::public_key_bytes(&signer),
-        ).unwrap();
+        let verifier =
+            crate::bls::BlsVerifier::from_public_key_bytes(&Signer::public_key_bytes(&signer))
+                .unwrap();
         assert!(verifier.verify(b"eip2333 test", &sig).unwrap());
     }
 
@@ -416,8 +402,9 @@ mod tests {
         // BIP-39 typically produces 64-byte seeds
         let seed = hex::decode(
             "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e7e24052f25e85b57\
-             0b22b1c73a90d5ea9a557c932c2d9b9c5f3e2e70e2e5d5c6e85c9e6b2e7e5d40"
-        ).unwrap();
+             0b22b1c73a90d5ea9a557c932c2d9b9c5f3e2e70e2e5d5c6e85c9e6b2e7e5d40",
+        )
+        .unwrap();
         let sk = derive_master_sk(&seed).unwrap();
         assert_ne!(&*sk, &[0u8; 32]);
     }

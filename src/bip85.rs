@@ -173,10 +173,7 @@ fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, SignerError> {
 /// **Path:** `m/83696968'/2'/{index}'`
 ///
 /// Returns a compressed WIF key (mainnet, prefix 'L' or 'K').
-pub fn derive_wif(
-    master: &ExtendedPrivateKey,
-    index: u32,
-) -> Result<String, SignerError> {
+pub fn derive_wif(master: &ExtendedPrivateKey, index: u32) -> Result<String, SignerError> {
     let path_str = format!("m/{BIP85_APP_INDEX}'/2'/{index}'");
     let path = DerivationPath::parse(&path_str)?;
     let entropy = derive_entropy(master, &path)?;

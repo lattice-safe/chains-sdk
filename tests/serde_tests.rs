@@ -6,7 +6,11 @@
 #[test]
 fn serde_ethereum_signature_roundtrip() {
     use trad_signer::ethereum::EthereumSignature;
-    let sig = EthereumSignature { r: [0xAA; 32], s: [0xBB; 32], v: 28 };
+    let sig = EthereumSignature {
+        r: [0xAA; 32],
+        s: [0xBB; 32],
+        v: 28,
+    };
     let json = serde_json::to_string(&sig).unwrap();
     let restored: EthereumSignature = serde_json::from_str(&json).unwrap();
     assert_eq!(sig.to_bytes(), restored.to_bytes());
@@ -48,8 +52,8 @@ fn serde_solana_signature_roundtrip() {
 #[cfg(all(feature = "serde", feature = "xrp"))]
 #[test]
 fn serde_xrp_signature_roundtrip() {
-    use trad_signer::xrp::XrpEcdsaSigner;
     use trad_signer::traits::{KeyPair, Signer};
+    use trad_signer::xrp::XrpEcdsaSigner;
 
     let signer = XrpEcdsaSigner::generate().unwrap();
     let sig = signer.sign(b"serde test").unwrap();
@@ -92,7 +96,10 @@ fn serde_bls_pubkey_roundtrip() {
 #[test]
 fn serde_frost_signature_roundtrip() {
     use trad_signer::threshold::frost::signing::FrostSignature;
-    let sig = FrostSignature { r_bytes: vec![0x02; 33], s_bytes: [0xCC; 32] };
+    let sig = FrostSignature {
+        r_bytes: vec![0x02; 33],
+        s_bytes: [0xCC; 32],
+    };
     let json = serde_json::to_string(&sig).unwrap();
     let restored: FrostSignature = serde_json::from_str(&json).unwrap();
     assert_eq!(sig.to_bytes(), restored.to_bytes());
@@ -102,7 +109,10 @@ fn serde_frost_signature_roundtrip() {
 #[test]
 fn serde_musig2_signature_roundtrip() {
     use trad_signer::threshold::musig2::signing::MuSig2Signature;
-    let sig = MuSig2Signature { r: [0xDD; 32], s: [0xEE; 32] };
+    let sig = MuSig2Signature {
+        r: [0xDD; 32],
+        s: [0xEE; 32],
+    };
     let json = serde_json::to_string(&sig).unwrap();
     let restored: MuSig2Signature = serde_json::from_str(&json).unwrap();
     assert_eq!(sig.to_bytes(), restored.to_bytes());
@@ -112,7 +122,11 @@ fn serde_musig2_signature_roundtrip() {
 #[test]
 fn serde_ethereum_signature_json_fields() {
     use trad_signer::ethereum::EthereumSignature;
-    let sig = EthereumSignature { r: [1; 32], s: [2; 32], v: 27 };
+    let sig = EthereumSignature {
+        r: [1; 32],
+        s: [2; 32],
+        v: 27,
+    };
     let json = serde_json::to_string(&sig).unwrap();
     assert!(json.contains("\"v\":27"));
     assert!(json.contains("\"r\""));

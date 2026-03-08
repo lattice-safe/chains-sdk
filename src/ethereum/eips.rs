@@ -48,7 +48,9 @@ impl Permit {
     /// `keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")`
     #[must_use]
     pub fn type_hash() -> [u8; 32] {
-        keccak256(b"Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
+        keccak256(
+            b"Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)",
+        )
     }
 
     /// Compute the struct hash for this permit.
@@ -327,10 +329,8 @@ impl AuthMessage {
 
 /// EIP-6492 magic suffix bytes appended to wrapped signatures.
 pub const EIP6492_MAGIC: [u8; 32] = [
-    0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92,
-    0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92,
-    0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92,
-    0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92,
+    0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92,
+    0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92, 0x64, 0x92,
 ];
 
 /// Wrap a signature with EIP-6492 format for pre-deploy contract wallets.
@@ -693,13 +693,16 @@ pub fn encode_multicall3(calls: &[([u8; 20], bool, Vec<u8>)]) -> Vec<u8> {
     // aggregate3 selector: keccak256("aggregate3((address,bool,bytes)[])")
     let selector = &keccak256(b"aggregate3((address,bool,bytes)[])")[..4];
 
-    let call_tuples: Vec<AbiValue> = calls.iter().map(|(target, allow, cd)| {
-        AbiValue::Tuple(vec![
-            AbiValue::Address(*target),
-            AbiValue::Bool(*allow),
-            AbiValue::Bytes(cd.clone()),
-        ])
-    }).collect();
+    let call_tuples: Vec<AbiValue> = calls
+        .iter()
+        .map(|(target, allow, cd)| {
+            AbiValue::Tuple(vec![
+                AbiValue::Address(*target),
+                AbiValue::Bool(*allow),
+                AbiValue::Bytes(cd.clone()),
+            ])
+        })
+        .collect();
 
     let mut calldata = Vec::new();
     calldata.extend_from_slice(selector);
@@ -709,8 +712,8 @@ pub fn encode_multicall3(calls: &[([u8; 20], bool, Vec<u8>)]) -> Vec<u8> {
 
 /// The canonical Multicall3 contract address (same on all chains).
 pub const MULTICALL3_ADDRESS: [u8; 20] = [
-    0xCA, 0x11, 0xBD, 0xE0, 0x59, 0x77, 0xB3, 0x63, 0x11, 0x67,
-    0x02, 0x88, 0x62, 0xBE, 0x2A, 0x17, 0x39, 0x76, 0xCA, 0x11,
+    0xCA, 0x11, 0xBD, 0xE0, 0x59, 0x77, 0xB3, 0x63, 0x11, 0x67, 0x02, 0x88, 0x62, 0xBE, 0x2A, 0x17,
+    0x39, 0x76, 0xCA, 0x11,
 ];
 
 /// Encode a simple Multicall (`tryAggregate`) for read-only batched calls.
@@ -727,12 +730,15 @@ pub fn encode_try_aggregate(require_success: bool, calls: &[([u8; 20], Vec<u8>)]
 
     let selector = &keccak256(b"tryAggregate(bool,(address,bytes)[])")[..4];
 
-    let call_tuples: Vec<AbiValue> = calls.iter().map(|(target, cd)| {
-        AbiValue::Tuple(vec![
-            AbiValue::Address(*target),
-            AbiValue::Bytes(cd.clone()),
-        ])
-    }).collect();
+    let call_tuples: Vec<AbiValue> = calls
+        .iter()
+        .map(|(target, cd)| {
+            AbiValue::Tuple(vec![
+                AbiValue::Address(*target),
+                AbiValue::Bytes(cd.clone()),
+            ])
+        })
+        .collect();
 
     let mut calldata = Vec::new();
     calldata.extend_from_slice(selector);
@@ -880,8 +886,16 @@ mod tests {
 
     #[test]
     fn test_eip7702_different_chain_different_hash() {
-        let auth1 = Eip7702Authorization { chain_id: 1, address: [0xCC; 20], nonce: 0 };
-        let auth2 = Eip7702Authorization { chain_id: 5, address: [0xCC; 20], nonce: 0 };
+        let auth1 = Eip7702Authorization {
+            chain_id: 1,
+            address: [0xCC; 20],
+            nonce: 0,
+        };
+        let auth2 = Eip7702Authorization {
+            chain_id: 5,
+            address: [0xCC; 20],
+            nonce: 0,
+        };
         assert_ne!(auth1.signing_hash(), auth2.signing_hash());
     }
 
@@ -910,14 +924,20 @@ mod tests {
 
     #[test]
     fn test_auth_message_different_nonce() {
-        let msg = AuthMessage { invoker: [0xEE; 20], commit: [0xFF; 32] };
+        let msg = AuthMessage {
+            invoker: [0xEE; 20],
+            commit: [0xFF; 32],
+        };
         assert_ne!(msg.signing_hash(1, 0), msg.signing_hash(1, 1));
     }
 
     #[test]
     fn test_auth_message_sign() {
         let signer = super::super::EthereumSigner::generate().unwrap();
-        let msg = AuthMessage { invoker: [0xAA; 20], commit: [0xBB; 32] };
+        let msg = AuthMessage {
+            invoker: [0xAA; 20],
+            commit: [0xBB; 32],
+        };
         let sig = msg.sign(&signer, 1, 0).unwrap();
         assert!(sig.v == 27 || sig.v == 28);
     }
@@ -999,7 +1019,11 @@ mod tests {
         let auth = TransferWithAuthorization {
             from: signer.address(),
             to: [0xBB; 20],
-            value: { let mut v = [0u8;32]; v[31] = 100; v },
+            value: {
+                let mut v = [0u8; 32];
+                v[31] = 100;
+                v
+            },
             valid_after: 0,
             valid_before: u64::MAX,
             nonce: [0x42; 32],
@@ -1024,11 +1048,16 @@ mod tests {
     #[test]
     fn test_transfer_auth_different_nonce_different_hash() {
         let auth1 = TransferWithAuthorization {
-            from: [0xAA;20], to: [0xBB;20], value: [0;32],
-            valid_after: 0, valid_before: u64::MAX, nonce: [0x01;32],
+            from: [0xAA; 20],
+            to: [0xBB; 20],
+            value: [0; 32],
+            valid_after: 0,
+            valid_before: u64::MAX,
+            nonce: [0x01; 32],
         };
         let auth2 = TransferWithAuthorization {
-            nonce: [0x02;32], ..auth1.clone()
+            nonce: [0x02; 32],
+            ..auth1.clone()
         };
         assert_ne!(auth1.struct_hash(), auth2.struct_hash());
     }
@@ -1050,7 +1079,11 @@ mod tests {
         let signer = super::super::EthereumSigner::generate().unwrap();
         let permit = Erc721Permit {
             spender: [0xBB; 20],
-            token_id: { let mut t = [0u8;32]; t[31] = 1; t }, // tokenId = 1
+            token_id: {
+                let mut t = [0u8; 32];
+                t[31] = 1;
+                t
+            }, // tokenId = 1
             nonce: 0,
             deadline: u64::MAX,
         };
@@ -1062,11 +1095,22 @@ mod tests {
     #[test]
     fn test_erc721_permit_different_token_id() {
         let perm1 = Erc721Permit {
-            spender: [0xBB;20], token_id: { let mut t=[0u8;32]; t[31]=1; t },
-            nonce: 0, deadline: u64::MAX,
+            spender: [0xBB; 20],
+            token_id: {
+                let mut t = [0u8; 32];
+                t[31] = 1;
+                t
+            },
+            nonce: 0,
+            deadline: u64::MAX,
         };
         let perm2 = Erc721Permit {
-            token_id: { let mut t=[0u8;32]; t[31]=2; t }, ..perm1.clone()
+            token_id: {
+                let mut t = [0u8; 32];
+                t[31] = 2;
+                t
+            },
+            ..perm1.clone()
         };
         assert_ne!(perm1.struct_hash(), perm2.struct_hash());
     }
@@ -1095,9 +1139,7 @@ mod tests {
 
     #[test]
     fn test_try_aggregate_encode() {
-        let calls = vec![
-            ([0xAA; 20], vec![0x01, 0x02]),
-        ];
+        let calls = vec![([0xAA; 20], vec![0x01, 0x02])];
         let calldata = encode_try_aggregate(true, &calls);
         let expected_selector = &keccak256(b"tryAggregate(bool,(address,bytes)[])")[..4];
         assert_eq!(&calldata[..4], expected_selector);
@@ -1112,4 +1154,3 @@ mod tests {
         );
     }
 }
-

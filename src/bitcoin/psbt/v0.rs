@@ -184,7 +184,11 @@ impl Psbt {
 
     /// Set the Taproot key-path signature for an input (BIP-371).
     pub fn set_tap_key_sig(&mut self, input_idx: usize, signature: &[u8]) {
-        self.set_input_kv(input_idx, vec![InputKey::TapKeySig as u8], signature.to_vec());
+        self.set_input_kv(
+            input_idx,
+            vec![InputKey::TapKeySig as u8],
+            signature.to_vec(),
+        );
     }
 
     /// Sign a SegWit v0 (P2WPKH) input using the provided signer.
@@ -202,17 +206,17 @@ impl Psbt {
         signer: &crate::bitcoin::BitcoinSigner,
         sighash_type: crate::bitcoin::tapscript::SighashType,
     ) -> Result<(), SignerError> {
-        use crate::traits::Signer;
         use crate::bitcoin::sighash;
         use crate::bitcoin::transaction::*;
+        use crate::traits::Signer;
 
         // Extract witness UTXO from input map
         let witness_utxo_key = vec![InputKey::WitnessUtxo as u8];
-        let utxo_data = self.inputs.get(input_idx)
+        let utxo_data = self
+            .inputs
+            .get(input_idx)
             .and_then(|m| m.get(&witness_utxo_key))
-            .ok_or_else(|| SignerError::SigningFailed(
-                "missing witness UTXO for input".into()
-            ))?
+            .ok_or_else(|| SignerError::SigningFailed("missing witness UTXO for input".into()))?
             .clone();
 
         // Parse witness UTXO: amount (8 bytes LE) + scriptPubKey
@@ -231,7 +235,7 @@ impl Psbt {
         // Extract pubkey hash from P2WPKH scriptPubKey: OP_0 OP_PUSH20 <hash>
         if script_pk.len() != 22 || script_pk[0] != 0x00 || script_pk[1] != 0x14 {
             return Err(SignerError::SigningFailed(
-                "input is not P2WPKH (expected OP_0 OP_PUSH20)".into()
+                "input is not P2WPKH (expected OP_0 OP_PUSH20)".into(),
             ));
         }
         let mut pubkey_hash = [0u8; 20];
@@ -241,12 +245,13 @@ impl Psbt {
         let expected_hash = crate::crypto::hash160(&signer.public_key_bytes());
         if pubkey_hash != expected_hash {
             return Err(SignerError::SigningFailed(
-                "signer public key does not match the P2WPKH input".into()
+                "signer public key does not match the P2WPKH input".into(),
             ));
         }
 
         // Get the unsigned transaction
-        let tx_bytes = self.unsigned_tx()
+        let tx_bytes = self
+            .unsigned_tx()
             .ok_or_else(|| SignerError::SigningFailed("missing unsigned tx".into()))?
             .clone();
 
@@ -255,7 +260,10 @@ impl Psbt {
 
         // Compute BIP-143 sighash
         let script_code = sighash::p2wpkh_script_code(&pubkey_hash);
-        let prev_out = sighash::PrevOut { script_code, value: amount };
+        let prev_out = sighash::PrevOut {
+            script_code,
+            value: amount,
+        };
         let sighash_value = sighash::segwit_v0_sighash(&tx, input_idx, &prev_out, sighash_type)?;
 
         // Sign
@@ -282,20 +290,21 @@ impl Psbt {
         signer: &crate::bitcoin::schnorr::SchnorrSigner,
         sighash_type: crate::bitcoin::tapscript::SighashType,
     ) -> Result<(), SignerError> {
-        use crate::traits::Signer;
         use crate::bitcoin::sighash;
         use crate::bitcoin::transaction::*;
+        use crate::traits::Signer;
 
         // Extract all witness UTXOs for taproot sighash (needs all prevouts)
         let mut prevouts = Vec::new();
         let witness_utxo_key = vec![InputKey::WitnessUtxo as u8];
         for (i, input_map) in self.inputs.iter().enumerate() {
-            let utxo_data = input_map.get(&witness_utxo_key)
-                .ok_or_else(|| SignerError::SigningFailed(
-                    format!("missing witness UTXO for input {i}")
-                ))?;
+            let utxo_data = input_map.get(&witness_utxo_key).ok_or_else(|| {
+                SignerError::SigningFailed(format!("missing witness UTXO for input {i}"))
+            })?;
             if utxo_data.len() < 9 {
-                return Err(SignerError::SigningFailed(format!("witness UTXO {i} too short")));
+                return Err(SignerError::SigningFailed(format!(
+                    "witness UTXO {i} too short"
+                )));
             }
             let mut amount_bytes = [0u8; 8];
             amount_bytes.copy_from_slice(&utxo_data[..8]);
@@ -303,19 +312,22 @@ impl Psbt {
             let mut utxo_off = 8usize;
             let script_len = encoding::read_compact_size(utxo_data, &mut utxo_off)? as usize;
             let script_pk = utxo_data[utxo_off..utxo_off + script_len].to_vec();
-            prevouts.push(TxOut { value: amount, script_pubkey: script_pk });
+            prevouts.push(TxOut {
+                value: amount,
+                script_pubkey: script_pk,
+            });
         }
 
         // Get the unsigned transaction
-        let tx_bytes = self.unsigned_tx()
+        let tx_bytes = self
+            .unsigned_tx()
             .ok_or_else(|| SignerError::SigningFailed("missing unsigned tx".into()))?
             .clone();
         let tx = parse_unsigned_tx(&tx_bytes)?;
 
         // Compute BIP-341 sighash
-        let sighash_value = sighash::taproot_key_path_sighash(
-            &tx, input_idx, &prevouts, sighash_type,
-        )?;
+        let sighash_value =
+            sighash::taproot_key_path_sighash(&tx, input_idx, &prevouts, sighash_type)?;
 
         // Sign with Schnorr
         let sig = signer.sign(&sighash_value)?;
@@ -398,18 +410,23 @@ impl Psbt {
         psbt.global = parse_kv_map(data, &mut offset)?;
 
         // Try to extract input/output counts from the unsigned transaction (key 0x00)
-        let counts = psbt.global.get(&vec![0x00]).and_then(|raw_tx| {
-            extract_tx_io_counts(raw_tx)
-        });
+        let counts = psbt
+            .global
+            .get(&vec![0x00])
+            .and_then(|raw_tx| extract_tx_io_counts(raw_tx));
 
         if let Some((num_inputs, num_outputs)) = counts {
             // Parse exactly num_inputs input maps, then num_outputs output maps
             for _ in 0..num_inputs {
-                if offset >= data.len() { break; }
+                if offset >= data.len() {
+                    break;
+                }
                 psbt.inputs.push(parse_kv_map(data, &mut offset)?);
             }
             for _ in 0..num_outputs {
-                if offset >= data.len() { break; }
+                if offset >= data.len() {
+                    break;
+                }
                 psbt.outputs.push(parse_kv_map(data, &mut offset)?);
             }
         } else {
@@ -420,9 +437,15 @@ impl Psbt {
                     let has_input_keys = map.keys().any(|k| {
                         matches!(
                             k.first(),
-                            Some(&0x00) | Some(&0x01) | Some(&0x02)
-                                | Some(&0x03) | Some(&0x06) | Some(&0x07)
-                                | Some(&0x08) | Some(&0x13) | Some(&0x14)
+                            Some(&0x00)
+                                | Some(&0x01)
+                                | Some(&0x02)
+                                | Some(&0x03)
+                                | Some(&0x06)
+                                | Some(&0x07)
+                                | Some(&0x08)
+                                | Some(&0x13)
+                                | Some(&0x14)
                                 | Some(&0x17)
                         )
                     });
@@ -454,7 +477,10 @@ impl Default for Psbt {
 // ─── Parsing Helpers ────────────────────────────────────────────────
 
 /// Parse a key-value map from PSBT binary data.
-fn parse_kv_map(data: &[u8], offset: &mut usize) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, SignerError> {
+fn parse_kv_map(
+    data: &[u8],
+    offset: &mut usize,
+) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, SignerError> {
     let mut map = BTreeMap::new();
 
     loop {
@@ -492,7 +518,6 @@ fn parse_kv_map(data: &[u8], offset: &mut usize) -> Result<BTreeMap<Vec<u8>, Vec
     }
 }
 
-
 /// Extract input and output counts from a raw unsigned transaction.
 ///
 /// Parses just enough of the transaction to read the varint counts.
@@ -508,11 +533,15 @@ fn extract_tx_io_counts(raw_tx: &[u8]) -> Option<(usize, usize)> {
     // Skip all inputs: each has outpoint(36) + varint(script_len) + script + sequence(4)
     for _ in 0..num_inputs {
         // outpoint (32 txid + 4 vout)
-        if offset + 36 > raw_tx.len() { return None; }
+        if offset + 36 > raw_tx.len() {
+            return None;
+        }
         offset += 36;
         // scriptSig length + data
         let script_len = encoding::read_compact_size(raw_tx, &mut offset).ok()? as usize;
-        if offset + script_len + 4 > raw_tx.len() { return None; }
+        if offset + script_len + 4 > raw_tx.len() {
+            return None;
+        }
         offset += script_len;
         // sequence
         offset += 4;
@@ -573,7 +602,10 @@ mod tests {
         let mut psbt = Psbt::new();
         psbt.set_unsigned_tx(&[0x01, 0x00, 0x00, 0x00]);
         let idx = psbt.add_input();
-        let script_pk = [0x00u8, 0x14, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA];
+        let script_pk = [
+            0x00u8, 0x14, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+            0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+        ];
         psbt.set_witness_utxo(idx, 50000, &script_pk);
 
         let serialized = psbt.serialize();
@@ -663,7 +695,9 @@ mod tests {
         psbt.set_witness_utxo(idx, 100000, &script_pk);
 
         let input = &psbt.inputs[0];
-        let value = input.get(&vec![InputKey::WitnessUtxo as u8]).expect("exists");
+        let value = input
+            .get(&vec![InputKey::WitnessUtxo as u8])
+            .expect("exists");
         // First 8 bytes should be amount in LE
         assert_eq!(&value[..8], &100000u64.to_le_bytes());
     }

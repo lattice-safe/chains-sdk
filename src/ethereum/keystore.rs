@@ -8,9 +8,9 @@
 
 use crate::error::SignerError;
 use aes::cipher::{KeyIvInit, StreamCipher};
+use core::fmt;
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroizing;
-use core::fmt;
 
 /// AES-128-CTR cipher type alias.
 type Aes128Ctr = ctr::Ctr64BE<aes::Aes128>;
@@ -87,26 +87,23 @@ impl Keystore {
         params: &ScryptParams,
     ) -> Result<Self, SignerError> {
         if private_key.len() != 32 {
-            return Err(SignerError::InvalidPrivateKey("key must be 32 bytes".into()));
+            return Err(SignerError::InvalidPrivateKey(
+                "key must be 32 bytes".into(),
+            ));
         }
 
         // Generate random salt and IV
         let mut salt = [0u8; 32];
-        getrandom::getrandom(&mut salt)
-            .map_err(|_| SignerError::EntropyError)?;
+        crate::security::secure_random(&mut salt)?;
         let mut iv = [0u8; 16];
-        getrandom::getrandom(&mut iv)
-            .map_err(|_| SignerError::EntropyError)?;
+        crate::security::secure_random(&mut iv)?;
 
         // Derive key using scrypt
         let derived = derive_scrypt_key(password, &salt, params)?;
 
         // Encrypt with AES-128-CTR using first 16 bytes of derived key
         let mut ciphertext = private_key.to_vec();
-        let mut cipher = Aes128Ctr::new(
-            derived[..16].into(),
-            iv.as_ref().into(),
-        );
+        let mut cipher = Aes128Ctr::new(derived[..16].into(), iv.as_ref().into());
         cipher.apply_keystream(&mut ciphertext);
 
         // MAC: keccak256(derived_key[16..32] || ciphertext)
@@ -122,8 +119,7 @@ impl Keystore {
 
         // Generate UUID
         let mut uuid_bytes = [0u8; 16];
-        getrandom::getrandom(&mut uuid_bytes)
-            .map_err(|_| SignerError::EntropyError)?;
+        crate::security::secure_random(&mut uuid_bytes)?;
         // Set version 4 and variant bits
         uuid_bytes[6] = (uuid_bytes[6] & 0x0F) | 0x40;
         uuid_bytes[8] = (uuid_bytes[8] & 0x3F) | 0x80;
@@ -133,7 +129,16 @@ impl Keystore {
             u16::from_be_bytes([uuid_bytes[4], uuid_bytes[5]]),
             u16::from_be_bytes([uuid_bytes[6], uuid_bytes[7]]),
             u16::from_be_bytes([uuid_bytes[8], uuid_bytes[9]]),
-            u64::from_be_bytes([0, 0, uuid_bytes[10], uuid_bytes[11], uuid_bytes[12], uuid_bytes[13], uuid_bytes[14], uuid_bytes[15]]),
+            u64::from_be_bytes([
+                0,
+                0,
+                uuid_bytes[10],
+                uuid_bytes[11],
+                uuid_bytes[12],
+                uuid_bytes[13],
+                uuid_bytes[14],
+                uuid_bytes[15]
+            ]),
         );
 
         Ok(Self {
@@ -169,10 +174,7 @@ impl Keystore {
 
         // Decrypt with AES-128-CTR
         let mut plaintext = self.ciphertext.clone();
-        let mut cipher = Aes128Ctr::new(
-            derived[..16].into(),
-            self.iv.as_ref().into(),
-        );
+        let mut cipher = Aes128Ctr::new(derived[..16].into(), self.iv.as_ref().into());
         cipher.apply_keystream(&mut plaintext);
 
         Ok(Zeroizing::new(plaintext))
@@ -212,7 +214,11 @@ impl fmt::Debug for Keystore {
 
 // ─── Internal Helpers ──────────────────────────────────────────────
 
-fn derive_scrypt_key(password: &[u8], salt: &[u8], params: &ScryptParams) -> Result<Zeroizing<Vec<u8>>, SignerError> {
+fn derive_scrypt_key(
+    password: &[u8],
+    salt: &[u8],
+    params: &ScryptParams,
+) -> Result<Zeroizing<Vec<u8>>, SignerError> {
     use scrypt::scrypt;
     let log_n = (params.n as f64).log2() as u8;
     let scrypt_params = scrypt::Params::new(log_n, params.r, params.p, params.dklen as usize)

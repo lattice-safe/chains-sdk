@@ -14,7 +14,7 @@ use k256::{AffinePoint, ProjectivePoint, Scalar};
 use super::signing::KeyAggContext;
 
 /// A tweak to apply to an aggregated key.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Tweak {
     /// The tweak scalar.
     pub scalar: Scalar,
@@ -22,8 +22,17 @@ pub struct Tweak {
     pub is_xonly: bool,
 }
 
+impl core::fmt::Debug for Tweak {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Tweak")
+            .field("scalar", &"[REDACTED]")
+            .field("is_xonly", &self.is_xonly)
+            .finish()
+    }
+}
+
 /// Tweaked key aggregation context.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TweakedKeyAggContext {
     /// The original (pre-tweak) key aggregation context.
     pub original: KeyAggContext,
@@ -35,6 +44,16 @@ pub struct TweakedKeyAggContext {
     pub tweak_acc: Scalar,
     /// Whether the key was negated during tweaking.
     pub negated: bool,
+}
+
+impl core::fmt::Debug for TweakedKeyAggContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TweakedKeyAggContext")
+            .field("tweaked_x_only", &hex::encode(self.tweaked_x_only))
+            .field("tweak_acc", &"[REDACTED]")
+            .field("negated", &self.negated)
+            .finish()
+    }
 }
 
 /// Apply a plain tweak (BIP-32 style) to a key aggregation context.
@@ -154,8 +173,8 @@ fn parse_tweak_scalar(bytes: &[u8; 32]) -> Result<Scalar, SignerError> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::*;
     use super::super::signing;
+    use super::*;
 
     fn setup_2_of_2() -> (KeyAggContext, [u8; 33], [u8; 33]) {
         let sk1 = [0x11u8; 32];
@@ -235,7 +254,9 @@ mod tests {
     fn test_taproot_tweak_bip341_test_vector() {
         // BIP-341 test vector: internal key → tweaked key
         // Internal key from BIP-341 test: d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d
-        let internal_key = hex::decode("d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d").unwrap();
+        let internal_key =
+            hex::decode("d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d")
+                .unwrap();
         let mut ik = [0u8; 32];
         ik.copy_from_slice(&internal_key);
 

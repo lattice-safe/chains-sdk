@@ -1,6 +1,6 @@
 //! NEO N3 Witness serialization, NEP-11 (NFT), and GAS claim helpers.
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 // ═══════════════════════════════════════════════════════════════════
 // Witness Serialization
@@ -25,13 +25,13 @@ impl Witness {
         // Invocation script: PUSHDATA1 0x40 <signature_64_bytes>
         let mut inv = Vec::with_capacity(66);
         inv.push(0x0C); // PUSHDATA1 opcode (NeoVM)
-        inv.push(64);   // length
+        inv.push(64); // length
         inv.extend_from_slice(signature);
 
         // Verification script: PUSHDATA1 0x21 <pubkey_33_bytes> SYSCALL Neo.Crypto.CheckSig
         let mut ver = Vec::with_capacity(40);
         ver.push(0x0C); // PUSHDATA1
-        ver.push(33);   // length
+        ver.push(33); // length
         ver.extend_from_slice(public_key);
         // SYSCALL with hash of "Neo.Crypto.CheckSig"
         ver.push(0x41); // SYSCALL opcode
@@ -50,11 +50,7 @@ impl Witness {
     /// - `signatures` — List of 64-byte signatures
     /// - `public_keys` — List of 33-byte compressed public keys
     /// - `threshold` — Minimum number of signatures required (m)
-    pub fn from_multisig(
-        signatures: &[[u8; 64]],
-        public_keys: &[[u8; 33]],
-        threshold: u8,
-    ) -> Self {
+    pub fn from_multisig(signatures: &[[u8; 64]], public_keys: &[[u8; 33]], threshold: u8) -> Self {
         // Invocation: push each signature
         let mut inv = Vec::new();
         for sig in signatures {
@@ -148,10 +144,7 @@ pub mod nep11 {
     }
 
     /// Build a NEP-11 ownerOf query script.
-    pub fn owner_of(
-        script_hash: &[u8; 20],
-        token_id: &[u8],
-    ) -> Vec<u8> {
+    pub fn owner_of(script_hash: &[u8; 20], token_id: &[u8]) -> Vec<u8> {
         let mut sb = ScriptBuilder::new();
         sb.emit_push_bytes(token_id);
         sb.emit_contract_call(script_hash, "ownerOf", 1);
@@ -159,10 +152,7 @@ pub mod nep11 {
     }
 
     /// Build a NEP-11 properties query script.
-    pub fn properties(
-        script_hash: &[u8; 20],
-        token_id: &[u8],
-    ) -> Vec<u8> {
+    pub fn properties(script_hash: &[u8; 20], token_id: &[u8]) -> Vec<u8> {
         let mut sb = ScriptBuilder::new();
         sb.emit_push_bytes(token_id);
         sb.emit_contract_call(script_hash, "properties", 1);
@@ -170,10 +160,7 @@ pub mod nep11 {
     }
 
     /// Build a NEP-11 tokensOf query script.
-    pub fn tokens_of(
-        script_hash: &[u8; 20],
-        owner: &[u8; 20],
-    ) -> Vec<u8> {
+    pub fn tokens_of(script_hash: &[u8; 20], owner: &[u8; 20]) -> Vec<u8> {
         let mut sb = ScriptBuilder::new();
         sb.emit_push_hash160(owner);
         sb.emit_contract_call(script_hash, "tokensOf", 1);
@@ -187,25 +174,21 @@ pub mod nep11 {
 
 /// GAS contract script hash on Neo N3 mainnet.
 pub const GAS_CONTRACT_HASH: [u8; 20] = [
-    0xd2, 0xa4, 0xcf, 0xe7, 0xc5, 0xa1, 0xc5, 0x42, 0x05, 0x40,
-    0xe2, 0x0a, 0xd8, 0x58, 0x2b, 0x48, 0xd2, 0xfb, 0x95, 0x57,
+    0xd2, 0xa4, 0xcf, 0xe7, 0xc5, 0xa1, 0xc5, 0x42, 0x05, 0x40, 0xe2, 0x0a, 0xd8, 0x58, 0x2b, 0x48,
+    0xd2, 0xfb, 0x95, 0x57,
 ];
 
 /// NEO contract script hash on Neo N3 mainnet.
 pub const NEO_CONTRACT_HASH: [u8; 20] = [
-    0xef, 0x4f, 0x02, 0x6f, 0xcd, 0x3c, 0x3b, 0x14, 0x5c, 0x58,
-    0x3f, 0x61, 0x70, 0xa6, 0x9e, 0xe9, 0x7d, 0x1c, 0x5d, 0xb3,
+    0xef, 0x4f, 0x02, 0x6f, 0xcd, 0x3c, 0x3b, 0x14, 0x5c, 0x58, 0x3f, 0x61, 0x70, 0xa6, 0x9e, 0xe9,
+    0x7d, 0x1c, 0x5d, 0xb3,
 ];
 
 /// Build a GAS claim script.
 ///
 /// Transfers unclaimed GAS to the specified address by calling
 /// `transfer(from, to, amount)` on the GAS contract.
-pub fn gas_claim_script(
-    from: &[u8; 20],
-    to: &[u8; 20],
-    amount: u64,
-) -> Vec<u8> {
+pub fn gas_claim_script(from: &[u8; 20], to: &[u8; 20], amount: u64) -> Vec<u8> {
     use super::transaction::ScriptBuilder;
 
     let mut sb = ScriptBuilder::new();

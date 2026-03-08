@@ -91,6 +91,65 @@ pub fn validate_address(address: &str) -> bool {
     decoded[21..25] == checksum[..4]
 }
 
+impl NeoSigner {
+    /// Export the private key in **WIF** (Wallet Import Format).
+    ///
+    /// Uses version byte 0x80 with compression flag 0x01.
+    /// Result is a Base58Check-encoded string.
+    ///
+    /// # Security
+    /// The returned String contains the private key — handle with care.
+    pub fn to_wif(&self) -> Zeroizing<String> {
+        let pk_bytes = self.signing_key.to_bytes();
+        let mut payload = Vec::with_capacity(38);
+        payload.push(0x80); // version
+        payload.extend_from_slice(&pk_bytes);
+        payload.push(0x01); // compression flag
+
+        let checksum = crypto::double_sha256(&payload);
+        payload.extend_from_slice(&checksum[..4]);
+        Zeroizing::new(bs58::encode(payload).into_string())
+    }
+
+    /// Import a private key from **WIF** (Wallet Import Format).
+    ///
+    /// Accepts NEO WIF strings (version 0x80 with compression flag).
+    pub fn from_wif(wif: &str) -> Result<Self, SignerError> {
+        let decoded = bs58::decode(wif)
+            .into_vec()
+            .map_err(|_| SignerError::InvalidPrivateKey("invalid Base58".into()))?;
+
+        if decoded.len() != 38 {
+            return Err(SignerError::InvalidPrivateKey(format!(
+                "WIF: expected 38 bytes, got {}",
+                decoded.len()
+            )));
+        }
+
+        if decoded[0] != 0x80 {
+            return Err(SignerError::InvalidPrivateKey(format!(
+                "WIF: version 0x{:02x} != 0x80",
+                decoded[0]
+            )));
+        }
+
+        if decoded[33] != 0x01 {
+            return Err(SignerError::InvalidPrivateKey(
+                "WIF: missing compression flag".into(),
+            ));
+        }
+
+        // Verify checksum
+        let checksum = crypto::double_sha256(&decoded[..34]);
+        if decoded[34..38] != checksum[..4] {
+            return Err(SignerError::InvalidPrivateKey("WIF: bad checksum".into()));
+        }
+
+        use crate::traits::KeyPair;
+        Self::from_bytes(&decoded[1..33])
+    }
+}
+
 impl Drop for NeoSigner {
     fn drop(&mut self) {
         // p256::SigningKey implements ZeroizeOnDrop internally
@@ -254,7 +313,9 @@ mod tests {
     #[test]
     fn test_p256_not_k256() {
         // P-256 pubkeys are different from secp256k1 for the same private key bytes
-        let privkey = hex::decode("708309a7449e156b0db70e5b52e606c7e094ed676ce8953bf6c14757c826f590").unwrap();
+        let privkey =
+            hex::decode("708309a7449e156b0db70e5b52e606c7e094ed676ce8953bf6c14757c826f590")
+                .unwrap();
         let neo_signer = NeoSigner::from_bytes(&privkey).unwrap();
         let neo_pubkey = neo_signer.public_key_bytes();
         // This is a P-256 pubkey, not secp256k1
@@ -271,7 +332,9 @@ mod tests {
     // FIPS 186-4 / NIST CAVP P-256 Test Vector
     #[test]
     fn test_known_vector_p256_fips() {
-        let privkey = hex::decode("708309a7449e156b0db70e5b52e606c7e094ed676ce8953bf6c14757c826f590").unwrap();
+        let privkey =
+            hex::decode("708309a7449e156b0db70e5b52e606c7e094ed676ce8953bf6c14757c826f590")
+                .unwrap();
         let signer = NeoSigner::from_bytes(&privkey).unwrap();
         // Sign a test message and verify round-trip
         let sig = signer.sign(b"NIST P-256 test").unwrap();
@@ -352,5 +415,68 @@ mod tests {
         let addr1 = signer.address();
         let addr2 = signer.address();
         assert_eq!(addr1, addr2);
+    }
+
+    // ─── WIF Tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_neo_wif_roundtrip() {
+        let signer = NeoSigner::generate().unwrap();
+        let wif = signer.to_wif();
+        let restored = NeoSigner::from_wif(&wif).unwrap();
+        assert_eq!(signer.public_key_bytes(), restored.public_key_bytes());
+    }
+
+    #[test]
+    fn test_neo_wif_format() {
+        let signer = NeoSigner::generate().unwrap();
+        let wif = signer.to_wif();
+        // WIF starts with 'K' or 'L' for compressed keys
+        assert!(
+            wif.starts_with('K') || wif.starts_with('L'),
+            "WIF should start with K or L, got: {}",
+            &wif[..1]
+        );
+    }
+
+    #[test]
+    fn test_neo_wif_invalid_checksum() {
+        let signer = NeoSigner::generate().unwrap();
+        let wif = signer.to_wif();
+        // Tamper with the last character
+        let mut bad = wif.chars().collect::<Vec<_>>();
+        let last = bad.len() - 1;
+        bad[last] = if bad[last] == 'A' { 'B' } else { 'A' };
+        let bad_wif: String = bad.into_iter().collect();
+        assert!(NeoSigner::from_wif(&bad_wif).is_err());
+    }
+
+    #[test]
+    fn test_neo_wif_invalid_base58() {
+        assert!(NeoSigner::from_wif("0OIl").is_err()); // invalid Base58 chars
+    }
+
+    // ─── WIF Official Test Vector (neo.org) ─────────────────────
+
+    /// Known-good test vector from neo.org documentation:
+    /// private key: c7134d6fd8e73d819e82755c64c93788d8db0961929e025a53363c4cc02a6962
+    /// expected WIF: L3tgppXLgdaeqSGSFw1Go3skBiy8vQAM7YMXvTHsKQtE16PBncSU
+    #[test]
+    fn test_neo_wif_known_vector() {
+        let privkey =
+            hex::decode("c7134d6fd8e73d819e82755c64c93788d8db0961929e025a53363c4cc02a6962")
+                .unwrap();
+        let signer = NeoSigner::from_bytes(&privkey).unwrap();
+        let wif = signer.to_wif();
+        assert_eq!(
+            wif.as_str(),
+            "L3tgppXLgdaeqSGSFw1Go3skBiy8vQAM7YMXvTHsKQtE16PBncSU",
+            "WIF must match neo.org official test vector"
+        );
+
+        // Reverse: import WIF, verify same public key
+        let restored =
+            NeoSigner::from_wif("L3tgppXLgdaeqSGSFw1Go3skBiy8vQAM7YMXvTHsKQtE16PBncSU").unwrap();
+        assert_eq!(signer.public_key_bytes(), restored.public_key_bytes());
     }
 }

@@ -3,24 +3,24 @@
 //! Implements RFC 6979 deterministic nonces (built into k256),
 //! strict DER-encoded signature output, and double-SHA-256 hashing.
 
-pub mod schnorr;
-pub mod message;
-pub mod taproot;
-pub mod tapscript;
-pub mod psbt;
 pub mod descriptor;
-pub mod transaction;
 pub mod helpers;
+pub mod message;
+pub mod psbt;
+pub mod schnorr;
 pub mod scripts;
 pub mod sighash;
+pub mod taproot;
+pub mod tapscript;
+pub mod transaction;
 
 use crate::crypto;
 use crate::encoding;
 use crate::error::SignerError;
 use crate::traits;
 use k256::ecdsa::signature::hazmat::PrehashSigner;
-use k256::ecdsa::{Signature as K256Signature, SigningKey, VerifyingKey};
 use k256::ecdsa::signature::hazmat::PrehashVerifier;
+use k256::ecdsa::{Signature as K256Signature, SigningKey, VerifyingKey};
 use zeroize::Zeroizing;
 
 /// A Bitcoin ECDSA signature in DER encoding.
@@ -47,8 +47,7 @@ impl BitcoinSignature {
     /// Import from DER-encoded signature bytes.
     pub fn from_bytes(der: &[u8]) -> Result<Self, SignerError> {
         // Validate it's a valid DER ECDSA signature
-        K256Signature::from_der(der)
-            .map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
+        K256Signature::from_der(der).map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
         Ok(Self {
             der_bytes: der.to_vec(),
         })
@@ -152,7 +151,9 @@ impl BitcoinSigner {
         let checksum = double_sha256(&decoded[..payload_len]);
         use subtle::ConstantTimeEq;
         if decoded[payload_len..].ct_eq(&checksum[..4]).unwrap_u8() != 1 {
-            return Err(SignerError::InvalidPrivateKey("invalid WIF checksum".into()));
+            return Err(SignerError::InvalidPrivateKey(
+                "invalid WIF checksum".into(),
+            ));
         }
 
         // Extract key bytes (skip version byte; compression flag handled by length check)
@@ -215,7 +216,11 @@ fn base58check_encode(version: u8, payload: &[u8]) -> String {
 }
 
 /// Bech32/Bech32m encode for SegWit/Taproot addresses.
-pub(crate) fn bech32_encode(hrp: &str, witness_version: u8, program: &[u8]) -> Result<String, SignerError> {
+pub(crate) fn bech32_encode(
+    hrp: &str,
+    witness_version: u8,
+    program: &[u8],
+) -> Result<String, SignerError> {
     encoding::bech32_encode(hrp, witness_version, program)
 }
 
@@ -311,10 +316,7 @@ impl traits::Signer for BitcoinSigner {
     }
 
     fn public_key_bytes(&self) -> Vec<u8> {
-        self.signing_key
-            .verifying_key()
-            .to_sec1_bytes()
-            .to_vec()
+        self.signing_key.verifying_key().to_sec1_bytes().to_vec()
     }
 
     fn public_key_bytes_uncompressed(&self) -> Vec<u8> {
@@ -543,8 +545,7 @@ mod tests {
         let signer1 = BitcoinSigner::generate().unwrap();
         let signer2 = BitcoinSigner::generate().unwrap();
         let sig = signer1.sign(b"wrong key test").unwrap();
-        let verifier =
-            BitcoinVerifier::from_public_key_bytes(&signer2.public_key_bytes()).unwrap();
+        let verifier = BitcoinVerifier::from_public_key_bytes(&signer2.public_key_bytes()).unwrap();
         assert!(!verifier.verify(b"wrong key test", &sig).unwrap());
     }
 
@@ -580,7 +581,8 @@ mod tests {
     fn test_p2pkh_known_address_privkey_1() {
         // Private key = 1 → generator point G
         // Compressed P2PKH = 1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH
-        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap();
         let signer = BitcoinSigner::from_bytes(&sk).unwrap();
         assert_eq!(signer.p2pkh_address(), "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH");
     }
@@ -588,7 +590,8 @@ mod tests {
     #[test]
     fn test_p2wpkh_known_address_privkey_1() {
         // Private key = 1 → bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
-        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap();
         let signer = BitcoinSigner::from_bytes(&sk).unwrap();
         assert_eq!(
             signer.p2wpkh_address().unwrap(),
@@ -601,7 +604,8 @@ mod tests {
     #[test]
     fn test_wif_encode_known() {
         // Private key = 1 → known WIF
-        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap();
         let signer = BitcoinSigner::from_bytes(&sk).unwrap();
         let wif = signer.to_wif();
         assert!(wif.starts_with('K') || wif.starts_with('L'));
@@ -621,8 +625,10 @@ mod tests {
 
     #[test]
     fn test_validate_known_addresses() {
-        assert!(validate_address("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"));    // P2PKH
-        assert!(validate_address("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")); // P2WPKH
+        assert!(validate_address("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH")); // P2PKH
+        assert!(validate_address(
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+        )); // P2WPKH
         assert!(!validate_address(""));
         assert!(!validate_address("1invalid"));
         assert!(!validate_address("bc1qinvalid"));
@@ -636,7 +642,7 @@ mod tests {
         let sig = signer.sign_message(b"Hello Bitcoin").unwrap();
         // BIP-137 uses the same ECDSA path → DER encoded
         assert_eq!(sig.der_bytes()[0], 0x30); // DER SEQUENCE tag
-        // Verify round-trip
+                                              // Verify round-trip
         let verifier = BitcoinVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         let digest = bitcoin_message_hash(b"Hello Bitcoin");
         assert!(verifier.verify_prehashed(&digest, &sig).unwrap());

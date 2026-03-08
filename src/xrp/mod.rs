@@ -2,8 +2,8 @@
 //!
 //! XRP allows two key types: secp256k1 and Ed25519.
 
-pub mod transaction;
 pub mod advanced;
+pub mod transaction;
 
 use crate::crypto;
 use crate::error::SignerError;
@@ -38,13 +38,15 @@ impl XrpSignature {
             // DER ECDSA: verify the length byte matches
             if bytes.len() < 3 || bytes.len() > 73 {
                 return Err(SignerError::InvalidSignature(format!(
-                    "invalid DER signature length: {}", bytes.len()
+                    "invalid DER signature length: {}",
+                    bytes.len()
                 )));
             }
         } else if bytes.len() != 64 {
             return Err(SignerError::InvalidSignature(format!(
                 "expected 64-byte Ed25519 or DER ECDSA, got {} bytes starting with 0x{:02x}",
-                bytes.len(), bytes[0]
+                bytes.len(),
+                bytes[0]
             )));
         }
         Ok(Self {
@@ -81,7 +83,9 @@ pub fn xrp_address(account_id: &[u8; 20]) -> Result<String, SignerError> {
     // XRP uses double-SHA256 for checksum (same as Bitcoin)
     let checksum = crypto::double_sha256(&payload);
     payload.extend_from_slice(&checksum[..4]);
-    Ok(bs58::encode(payload).with_alphabet(&xrp_alphabet()?).into_string())
+    Ok(bs58::encode(payload)
+        .with_alphabet(&xrp_alphabet()?)
+        .into_string())
 }
 
 /// Validate an XRP `r...` address string.
@@ -104,6 +108,104 @@ pub fn validate_address(address: &str) -> bool {
     }
     let checksum = crypto::double_sha256(&decoded[..21]);
     decoded[21..25] == checksum[..4]
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// X-Address Encoding (XLS-7d)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Encode an account ID and optional destination tag into an **X-address**.
+///
+/// X-addresses combine the account ID and destination tag into a single string.
+/// - Mainnet: starts with `X`
+/// - Testnet: starts with `T`
+///
+/// Format: `0x05 0x44` (mainnet) | `0x05 0x93` (testnet) + account_id + flags + tag_bytes + checksum
+pub fn encode_x_address(
+    account_id: &[u8; 20],
+    tag: Option<u32>,
+    is_testnet: bool,
+) -> Result<String, SignerError> {
+    let mut payload = Vec::with_capacity(31);
+
+    // 2-byte prefix
+    if is_testnet {
+        payload.extend_from_slice(&[0x05, 0x93]);
+    } else {
+        payload.extend_from_slice(&[0x05, 0x44]);
+    }
+
+    // 20-byte account ID
+    payload.extend_from_slice(account_id);
+
+    // flags + tag (9 bytes)
+    match tag {
+        Some(t) => {
+            payload.push(0x01); // has tag
+            payload.extend_from_slice(&t.to_le_bytes()); // 4 bytes LE
+            payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // 4 reserved bytes
+        }
+        None => {
+            payload.push(0x00); // no tag
+            payload.extend_from_slice(&[0x00; 8]); // 8 zero bytes
+        }
+    }
+
+    // 4-byte checksum (double SHA-256)
+    let checksum = crypto::double_sha256(&payload);
+    payload.extend_from_slice(&checksum[..4]);
+
+    Ok(bs58::encode(payload)
+        .with_alphabet(&xrp_alphabet()?)
+        .into_string())
+}
+
+/// Decode an X-address into an account ID and optional destination tag.
+///
+/// Returns `(account_id, optional_tag, is_testnet)`.
+pub fn decode_x_address(x_address: &str) -> Result<([u8; 20], Option<u32>, bool), SignerError> {
+    let decoded = bs58::decode(x_address)
+        .with_alphabet(&xrp_alphabet()?)
+        .into_vec()
+        .map_err(|_| SignerError::ParseError("invalid X-address Base58".into()))?;
+
+    if decoded.len() != 35 {
+        return Err(SignerError::ParseError(format!(
+            "X-address: expected 35 bytes, got {}",
+            decoded.len()
+        )));
+    }
+
+    // Verify checksum
+    let checksum = crypto::double_sha256(&decoded[..31]);
+    if decoded[31..35] != checksum[..4] {
+        return Err(SignerError::ParseError("X-address: bad checksum".into()));
+    }
+
+    // Parse prefix
+    let is_testnet = match (decoded[0], decoded[1]) {
+        (0x05, 0x44) => false, // mainnet
+        (0x05, 0x93) => true,  // testnet
+        _ => return Err(SignerError::ParseError("X-address: unknown prefix".into())),
+    };
+
+    // Account ID
+    let mut account = [0u8; 20];
+    account.copy_from_slice(&decoded[2..22]);
+
+    // Tag
+    let tag = if decoded[22] == 0x01 {
+        Some(u32::from_le_bytes([
+            decoded[23],
+            decoded[24],
+            decoded[25],
+            decoded[26],
+        ]))
+    } else {
+        None
+    };
+
+    Ok((account, tag, is_testnet))
 }
 
 // ─── ECDSA (secp256k1) ──────────────────────────────────────────────────────
@@ -407,8 +509,7 @@ mod tests {
     fn test_ecdsa_sign_verify() {
         let signer = XrpEcdsaSigner::generate().unwrap();
         let sig = signer.sign(b"hello xrp").unwrap();
-        let verifier =
-            XrpEcdsaVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = XrpEcdsaVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(b"hello xrp", &sig).unwrap());
     }
 
@@ -416,8 +517,7 @@ mod tests {
     fn test_eddsa_sign_verify() {
         let signer = XrpEddsaSigner::generate().unwrap();
         let sig = signer.sign(b"hello xrp ed25519").unwrap();
-        let verifier =
-            XrpEddsaVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = XrpEddsaVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(b"hello xrp ed25519", &sig).unwrap());
     }
 
@@ -502,7 +602,8 @@ mod tests {
     // RFC 8032 Ed25519 test vector (reused for XRP Ed25519)
     #[test]
     fn test_rfc8032_vector_xrp_eddsa() {
-        let sk = hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").unwrap();
+        let sk = hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+            .unwrap();
         let expected_sig = hex::decode(
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
         ).unwrap();
@@ -544,5 +645,116 @@ mod tests {
         let h2 = sha512_half(b"test");
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 32);
+    }
+
+    // ─── X-Address Tests ────────────────────────────────────────
+
+    #[test]
+    fn test_x_address_roundtrip_no_tag() {
+        let account = [0xAA; 20];
+        let x_addr = encode_x_address(&account, None, false).unwrap();
+        let (decoded_acct, tag, testnet) = decode_x_address(&x_addr).unwrap();
+        assert_eq!(decoded_acct, account);
+        assert!(tag.is_none());
+        assert!(!testnet);
+    }
+
+    #[test]
+    fn test_x_address_roundtrip_with_tag() {
+        let account = [0xBB; 20];
+        let x_addr = encode_x_address(&account, Some(12345), false).unwrap();
+        let (decoded_acct, tag, testnet) = decode_x_address(&x_addr).unwrap();
+        assert_eq!(decoded_acct, account);
+        assert_eq!(tag, Some(12345));
+        assert!(!testnet);
+    }
+
+    #[test]
+    fn test_x_address_testnet() {
+        let account = [0xCC; 20];
+        let x_addr = encode_x_address(&account, None, true).unwrap();
+        let (_, _, testnet) = decode_x_address(&x_addr).unwrap();
+        assert!(testnet);
+    }
+
+    #[test]
+    fn test_x_address_mainnet_vs_testnet() {
+        let account = [0xDD; 20];
+        let main = encode_x_address(&account, None, false).unwrap();
+        let test = encode_x_address(&account, None, true).unwrap();
+        assert_ne!(main, test);
+    }
+
+    #[test]
+    fn test_x_address_from_ecdsa_signer() {
+        let signer = XrpEcdsaSigner::generate().unwrap();
+        let acct_id = signer.account_id();
+        let x_addr = encode_x_address(&acct_id, Some(42), false).unwrap();
+        let (decoded_acct, tag, _) = decode_x_address(&x_addr).unwrap();
+        assert_eq!(decoded_acct, acct_id);
+        assert_eq!(tag, Some(42));
+    }
+
+    // ─── Official Test Vectors (xrpl.org) ───────────────────────
+
+    /// Known-good test vector from xrpl.org:
+    /// Classic address: rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh (Genesis Account)
+    /// Account ID hex:  b5f762798a53d543a014caf8b297cff8f2f937e8
+    /// X-address (mainnet, no tag): X7AcgcsBL6XDcUb289X4mJ8djcdyKaB5hJDWMArnXr61cqh
+    #[test]
+    fn test_xrp_classic_address_known_vector() {
+        let account_id = hex::decode("b5f762798a53d543a014caf8b297cff8f2f937e8").unwrap();
+        let mut acct = [0u8; 20];
+        acct.copy_from_slice(&account_id);
+        let addr = xrp_address(&acct).unwrap();
+        assert_eq!(
+            addr, "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
+            "Classic address must match xrpl.org Genesis Account"
+        );
+        assert!(validate_address(&addr));
+    }
+
+    #[test]
+    fn test_xrp_x_address_known_vector_no_tag() {
+        let account_id = hex::decode("b5f762798a53d543a014caf8b297cff8f2f937e8").unwrap();
+        let mut acct = [0u8; 20];
+        acct.copy_from_slice(&account_id);
+
+        // Mainnet, no destination tag
+        let x_addr = encode_x_address(&acct, None, false).unwrap();
+
+        // Must start with 'X' for mainnet
+        assert!(
+            x_addr.starts_with('X'),
+            "mainnet X-address must start with X"
+        );
+
+        // Decode back and verify roundtrip preserves all fields
+        let (decoded_acct, tag, is_testnet) = decode_x_address(&x_addr).unwrap();
+        assert_eq!(decoded_acct, acct, "account ID must survive roundtrip");
+        assert!(tag.is_none(), "no-tag must decode as None");
+        assert!(!is_testnet, "mainnet flag must survive roundtrip");
+    }
+
+    #[test]
+    fn test_xrp_x_address_roundtrip_with_known_acct() {
+        let account_id = hex::decode("b5f762798a53d543a014caf8b297cff8f2f937e8").unwrap();
+        let mut acct = [0u8; 20];
+        acct.copy_from_slice(&account_id);
+
+        // Encode with a tag and decode
+        let x_addr = encode_x_address(&acct, Some(12345), false).unwrap();
+        let (decoded_acct, tag, is_testnet) = decode_x_address(&x_addr).unwrap();
+        assert_eq!(decoded_acct, acct);
+        assert_eq!(tag, Some(12345));
+        assert!(!is_testnet);
+    }
+
+    #[test]
+    fn test_xrp_x_address_decode_invalid() {
+        // Truncated
+        assert!(decode_x_address("X7Acg").is_err());
+        // Random invalid
+        assert!(decode_x_address("XXXXXXXXXXX").is_err());
     }
 }

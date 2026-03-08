@@ -198,10 +198,10 @@ pub fn taproot_tweak(
     use k256::AffinePoint;
 
     let pk_ct = AffinePoint::from_bytes((&pk_sec1).into());
-    let pk_point: ProjectivePoint = Option::from(pk_ct.map(ProjectivePoint::from))
-        .ok_or_else(|| SignerError::InvalidPublicKey(
-            "taproot internal key is not a valid curve point".into(),
-        ))?;
+    let pk_point: ProjectivePoint =
+        Option::from(pk_ct.map(ProjectivePoint::from)).ok_or_else(|| {
+            SignerError::InvalidPublicKey("taproot internal key is not a valid curve point".into())
+        })?;
 
     // Compute t * G
     let t_wide = k256::U256::from_be_slice(&tweak);
@@ -308,11 +308,7 @@ impl ControlBlock {
     ///
     /// Reconstructs the merkle root from the proof path and verifies
     /// that `taproot_tweak(internal_key, merkle_root) == output_key`.
-    pub fn verify(
-        &self,
-        output_key: &[u8; 32],
-        leaf: &TapLeaf,
-    ) -> bool {
+    pub fn verify(&self, output_key: &[u8; 32], leaf: &TapLeaf) -> bool {
         // Start with the leaf hash
         let mut current = leaf.leaf_hash();
 
@@ -347,8 +343,6 @@ pub fn taproot_address(
     let (output_key, _parity) = taproot_output_key(internal_key, tree)?;
     encoding::bech32_encode(hrp, 1, &output_key)
 }
-
-
 
 // ─── Tests ──────────────────────────────────────────────────────────
 

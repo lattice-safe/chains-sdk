@@ -140,8 +140,6 @@ pub fn compute_txid(raw_tx: &[u8]) -> [u8; 32] {
     txid
 }
 
-
-
 /// Create a P2WPKH scriptPubKey from a 20-byte pubkey hash.
 ///
 /// Format: `OP_0 OP_PUSH20 <pubkey_hash>`
@@ -180,7 +178,6 @@ pub fn sign_simple_p2wpkh(
     signer: &super::BitcoinSigner,
     message: &[u8],
 ) -> Result<Vec<u8>, crate::error::SignerError> {
-
     let pubkey = signer.public_key_bytes();
     let pubkey_hash = crypto::hash160(&pubkey);
     let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
@@ -191,15 +188,18 @@ pub fn sign_simple_p2wpkh(
 
     // Step 3: Build to_sign (spending to_spend:0)
     // We need the sighash, so we build the tx structure manually
-    use super::transaction::*;
     use super::sighash;
     use super::tapscript::SighashType;
+    use super::transaction::*;
 
     let mut tx = Transaction::new(0);
     let mut txid_internal = to_spend_txid;
     txid_internal.reverse(); // convert from display order back to internal
     tx.inputs.push(TxIn {
-        previous_output: OutPoint { txid: txid_internal, vout: 0 },
+        previous_output: OutPoint {
+            txid: txid_internal,
+            vout: 0,
+        },
         script_sig: vec![],
         sequence: 0,
     });
@@ -236,7 +236,6 @@ pub fn sign_simple_p2tr(
     signer: &super::schnorr::SchnorrSigner,
     message: &[u8],
 ) -> Result<Vec<u8>, crate::error::SignerError> {
-
     let x_only_pubkey_bytes = signer.public_key_bytes();
     let mut x_only = [0u8; 32];
     x_only.copy_from_slice(&x_only_pubkey_bytes);
@@ -246,15 +245,18 @@ pub fn sign_simple_p2tr(
     let to_spend = create_to_spend_tx(&script_pk, message);
     let to_spend_txid = compute_txid(&to_spend);
 
-    use super::transaction::*;
     use super::sighash;
     use super::tapscript::SighashType;
+    use super::transaction::*;
 
     let mut tx = Transaction::new(0);
     let mut txid_internal = to_spend_txid;
     txid_internal.reverse();
     tx.inputs.push(TxIn {
-        previous_output: OutPoint { txid: txid_internal, vout: 0 },
+        previous_output: OutPoint {
+            txid: txid_internal,
+            vout: 0,
+        },
         script_sig: vec![],
         sequence: 0,
     });
@@ -268,9 +270,7 @@ pub fn sign_simple_p2tr(
         value: 0,
         script_pubkey: script_pk,
     }];
-    let sighash_value = sighash::taproot_key_path_sighash(
-        &tx, 0, &prevouts, SighashType::Default,
-    )?;
+    let sighash_value = sighash::taproot_key_path_sighash(&tx, 0, &prevouts, SighashType::Default)?;
 
     // Sign with Schnorr (BIP-340 signs the raw message)
     use crate::traits::Signer;
@@ -301,9 +301,9 @@ pub fn verify_simple_p2wpkh(
     message: &[u8],
     signature: &[u8],
 ) -> Result<bool, crate::error::SignerError> {
-    use super::transaction::*;
     use super::sighash;
     use super::tapscript::SighashType;
+    use super::transaction::*;
 
     let pubkey_hash = crypto::hash160(pubkey);
     let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
@@ -317,7 +317,10 @@ pub fn verify_simple_p2wpkh(
     let mut txid_internal = to_spend_txid;
     txid_internal.reverse();
     tx.inputs.push(TxIn {
-        previous_output: OutPoint { txid: txid_internal, vout: 0 },
+        previous_output: OutPoint {
+            txid: txid_internal,
+            vout: 0,
+        },
         script_sig: vec![],
         sequence: 0,
     });
@@ -337,7 +340,10 @@ pub fn verify_simple_p2wpkh(
     // Verify the ECDSA signature
     let verifier = super::BitcoinVerifier::from_public_key_bytes(pubkey)?;
     use crate::traits::Verifier;
-    verifier.verify_prehashed(&sighash_value, &super::BitcoinSignature::from_bytes(signature)?)
+    verifier.verify_prehashed(
+        &sighash_value,
+        &super::BitcoinSignature::from_bytes(signature)?,
+    )
 }
 
 /// BIP-322 "simple" verification for P2TR (Taproot) proofs.
@@ -357,9 +363,9 @@ pub fn verify_simple_p2tr(
     message: &[u8],
     signature: &[u8; 64],
 ) -> Result<bool, crate::error::SignerError> {
-    use super::transaction::*;
     use super::sighash;
     use super::tapscript::SighashType;
+    use super::transaction::*;
 
     let script_pk = p2tr_script_pubkey(x_only_pubkey);
 
@@ -372,7 +378,10 @@ pub fn verify_simple_p2tr(
     let mut txid_internal = to_spend_txid;
     txid_internal.reverse();
     tx.inputs.push(TxIn {
-        previous_output: OutPoint { txid: txid_internal, vout: 0 },
+        previous_output: OutPoint {
+            txid: txid_internal,
+            vout: 0,
+        },
         script_sig: vec![],
         sequence: 0,
     });
@@ -386,9 +395,7 @@ pub fn verify_simple_p2tr(
         value: 0,
         script_pubkey: script_pk,
     }];
-    let sighash_value = sighash::taproot_key_path_sighash(
-        &tx, 0, &prevouts, SighashType::Default,
-    )?;
+    let sighash_value = sighash::taproot_key_path_sighash(&tx, 0, &prevouts, SighashType::Default)?;
 
     // Verify the Schnorr signature
     let verifier = super::schnorr::SchnorrVerifier::from_public_key_bytes(x_only_pubkey)?;
@@ -552,7 +559,10 @@ mod tests {
             let mut txid_internal = to_spend_txid;
             txid_internal.reverse();
             tx.inputs.push(super::super::transaction::TxIn {
-                previous_output: super::super::transaction::OutPoint { txid: txid_internal, vout: 0 },
+                previous_output: super::super::transaction::OutPoint {
+                    txid: txid_internal,
+                    vout: 0,
+                },
                 script_sig: vec![],
                 sequence: 0,
             });
@@ -561,10 +571,17 @@ mod tests {
                 script_pubkey: vec![0x6a],
             });
             let sc = super::super::sighash::p2wpkh_script_code(&pubkey_hash);
-            let prev = super::super::sighash::PrevOut { script_code: sc, value: 0 };
+            let prev = super::super::sighash::PrevOut {
+                script_code: sc,
+                value: 0,
+            };
             let sh = super::super::sighash::segwit_v0_sighash(
-                &tx, 0, &prev, super::super::tapscript::SighashType::All
-            ).unwrap();
+                &tx,
+                0,
+                &prev,
+                super::super::tapscript::SighashType::All,
+            )
+            .unwrap();
             signer.sign_prehashed(&sh).unwrap()
         };
 
@@ -591,7 +608,10 @@ mod tests {
         let mut txid_internal = to_spend_txid;
         txid_internal.reverse();
         tx.inputs.push(super::super::transaction::TxIn {
-            previous_output: super::super::transaction::OutPoint { txid: txid_internal, vout: 0 },
+            previous_output: super::super::transaction::OutPoint {
+                txid: txid_internal,
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0,
         });
@@ -600,10 +620,17 @@ mod tests {
             script_pubkey: vec![0x6a],
         });
         let sc = super::super::sighash::p2wpkh_script_code(&pubkey_hash);
-        let prev = super::super::sighash::PrevOut { script_code: sc, value: 0 };
+        let prev = super::super::sighash::PrevOut {
+            script_code: sc,
+            value: 0,
+        };
         let sh = super::super::sighash::segwit_v0_sighash(
-            &tx, 0, &prev, super::super::tapscript::SighashType::All
-        ).unwrap();
+            &tx,
+            0,
+            &prev,
+            super::super::tapscript::SighashType::All,
+        )
+        .unwrap();
         let sig = signer.sign_prehashed(&sh).unwrap();
 
         // Verify against message B — should fail

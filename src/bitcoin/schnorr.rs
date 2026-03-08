@@ -4,9 +4,11 @@
 
 use crate::error::SignerError;
 use crate::traits;
-use k256::schnorr::{SigningKey as SchnorrSigningKey, VerifyingKey as SchnorrVerifyingKey, Signature as SchnorrSig};
 use k256::schnorr::signature::Signer as SchnorrSignerTrait;
 use k256::schnorr::signature::Verifier as SchnorrVerifierTrait;
+use k256::schnorr::{
+    Signature as SchnorrSig, SigningKey as SchnorrSigningKey, VerifyingKey as SchnorrVerifyingKey,
+};
 use zeroize::Zeroizing;
 
 /// A BIP-340 Schnorr signature (64 bytes).
@@ -142,11 +144,7 @@ impl traits::Verifier for SchnorrVerifier {
     type Signature = SchnorrSignature;
     type Error = SignerError;
 
-    fn verify(
-        &self,
-        message: &[u8],
-        signature: &SchnorrSignature,
-    ) -> Result<bool, SignerError> {
+    fn verify(&self, message: &[u8], signature: &SchnorrSignature) -> Result<bool, SignerError> {
         let sig = SchnorrSig::try_from(signature.bytes.as_slice())
             .map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
         match SchnorrVerifierTrait::verify(&self.verifying_key, message, &sig) {
@@ -206,8 +204,9 @@ mod tests {
     fn test_bip340_vector_0() {
         let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000003")
             .unwrap();
-        let expected_pk = hex::decode("F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9")
-            .unwrap();
+        let expected_pk =
+            hex::decode("F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9")
+                .unwrap();
         let msg = hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
             .unwrap();
         let expected_sig = hex::decode(
@@ -215,7 +214,10 @@ mod tests {
         ).unwrap();
 
         let signer = SchnorrSigner::from_bytes(&sk).unwrap();
-        assert_eq!(hex::encode(signer.public_key_bytes()).to_uppercase(), hex::encode(&expected_pk).to_uppercase());
+        assert_eq!(
+            hex::encode(signer.public_key_bytes()).to_uppercase(),
+            hex::encode(&expected_pk).to_uppercase()
+        );
 
         // k256 uses random aux_rand, so signature bytes differ from the test vector.
         // Instead, verify our signature is valid, AND verify the expected vector signature.
@@ -228,7 +230,9 @@ mod tests {
         // edge-case auxiliary randomness handling. The key test is that OUR signatures verify.
         let mut expected_bytes = [0u8; 64];
         expected_bytes.copy_from_slice(&expected_sig);
-        let expected_sig_struct = SchnorrSignature { bytes: expected_bytes };
+        let expected_sig_struct = SchnorrSignature {
+            bytes: expected_bytes,
+        };
         let _official_result = verifier.verify(&msg, &expected_sig_struct);
     }
 
@@ -237,8 +241,9 @@ mod tests {
     fn test_bip340_vector_1() {
         let sk = hex::decode("B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF")
             .unwrap();
-        let expected_pk = hex::decode("DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659")
-            .unwrap();
+        let expected_pk =
+            hex::decode("DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659")
+                .unwrap();
         let msg = hex::decode("243F6A8885A308D313198A2E03707344A4093822299F31D0082EFA98EC4E6C89")
             .unwrap();
         let expected_sig = hex::decode(
@@ -246,7 +251,10 @@ mod tests {
         ).unwrap();
 
         let signer = SchnorrSigner::from_bytes(&sk).unwrap();
-        assert_eq!(hex::encode(signer.public_key_bytes()).to_uppercase(), hex::encode(&expected_pk).to_uppercase());
+        assert_eq!(
+            hex::encode(signer.public_key_bytes()).to_uppercase(),
+            hex::encode(&expected_pk).to_uppercase()
+        );
 
         // Sign and verify our own signature
         let sig = signer.sign(&msg).unwrap();
@@ -256,7 +264,9 @@ mod tests {
         // Verify the official BIP-340 test vector signature
         let mut expected_bytes = [0u8; 64];
         expected_bytes.copy_from_slice(&expected_sig);
-        let expected_sig_struct = SchnorrSignature { bytes: expected_bytes };
+        let expected_sig_struct = SchnorrSignature {
+            bytes: expected_bytes,
+        };
         // Note: The last byte 0F in the expected sig above is the correct BIP-340 value,
         // as published in the official test vectors CSV.
         let _result = verifier.verify(&msg, &expected_sig_struct);
@@ -315,7 +325,8 @@ mod tests {
     #[test]
     fn test_bip340_vector_4_tweaked_key() {
         // BIP-340 Test Vector 4: signing with a specific key
-        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let sk = hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap();
         let signer = SchnorrSigner::from_bytes(&sk).unwrap();
         let pk = signer.public_key_bytes();
         // Public key for sk=1 (x-only) should be the generator point's x-coordinate
@@ -343,7 +354,10 @@ mod tests {
     fn test_p2tr_testnet_address_format() {
         let signer = SchnorrSigner::generate().unwrap();
         let addr = signer.p2tr_testnet_address().unwrap();
-        assert!(addr.starts_with("tb1p"), "Testnet P2TR must start with tb1p");
+        assert!(
+            addr.starts_with("tb1p"),
+            "Testnet P2TR must start with tb1p"
+        );
     }
 
     #[test]

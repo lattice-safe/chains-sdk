@@ -4,15 +4,15 @@
 //!
 //! Each blockchain module is feature-gated so consumers only compile what they need.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(missing_docs)]
 
-pub mod error;
-pub mod traits;
 pub mod crypto;
 pub mod encoding;
+pub mod error;
 pub mod security;
+pub mod traits;
 
 #[cfg(feature = "serde")]
 pub(crate) mod serde_zeroizing;

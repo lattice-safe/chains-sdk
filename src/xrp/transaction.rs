@@ -7,8 +7,6 @@
 //!
 //! Field encoding follows the XRPL serialization format specification.
 
-
-
 // ═══════════════════════════════════════════════════════════════════
 // Binary Codec — Field Encoding
 // ═══════════════════════════════════════════════════════════════════
@@ -137,7 +135,7 @@ pub const TT_TRUST_SET: u16 = 20;
 ///
 /// # Arguments
 /// - `account` — Sender account ID (20 bytes)
-/// - `destination` — Recipient account ID (20 bytes) 
+/// - `destination` — Recipient account ID (20 bytes)
 /// - `amount_drops` — XRP amount in drops
 /// - `fee_drops` — Transaction fee in drops
 /// - `sequence` — Account sequence number
@@ -154,11 +152,23 @@ pub fn serialize_payment(
 
     // Fields must be serialized in canonical order (by type code, then field code)
     // Type 1: TransactionType
-    buf.extend_from_slice(&encode_uint16(fields::TRANSACTION_TYPE.0, fields::TRANSACTION_TYPE.1, TT_PAYMENT));
+    buf.extend_from_slice(&encode_uint16(
+        fields::TRANSACTION_TYPE.0,
+        fields::TRANSACTION_TYPE.1,
+        TT_PAYMENT,
+    ));
     // Type 2: Flags, Sequence, LastLedgerSequence
     buf.extend_from_slice(&encode_uint32(fields::FLAGS.0, fields::FLAGS.1, 0));
-    buf.extend_from_slice(&encode_uint32(fields::SEQUENCE.0, fields::SEQUENCE.1, sequence));
-    buf.extend_from_slice(&encode_uint32(fields::LAST_LEDGER_SEQUENCE.0, fields::LAST_LEDGER_SEQUENCE.1, last_ledger_sequence));
+    buf.extend_from_slice(&encode_uint32(
+        fields::SEQUENCE.0,
+        fields::SEQUENCE.1,
+        sequence,
+    ));
+    buf.extend_from_slice(&encode_uint32(
+        fields::LAST_LEDGER_SEQUENCE.0,
+        fields::LAST_LEDGER_SEQUENCE.1,
+        last_ledger_sequence,
+    ));
     // Type 6: Amount, Fee
     let mut amount_field = encode_field_id(fields::AMOUNT.0, fields::AMOUNT.1);
     amount_field.extend_from_slice(&encode_xrp_amount(amount_drops));
@@ -169,8 +179,16 @@ pub fn serialize_payment(
     buf.extend_from_slice(&fee_field);
 
     // Type 8: Account, Destination
-    buf.extend_from_slice(&encode_account_id(fields::ACCOUNT.0, fields::ACCOUNT.1, account));
-    buf.extend_from_slice(&encode_account_id(fields::DESTINATION.0, fields::DESTINATION.1, destination));
+    buf.extend_from_slice(&encode_account_id(
+        fields::ACCOUNT.0,
+        fields::ACCOUNT.1,
+        account,
+    ));
+    buf.extend_from_slice(&encode_account_id(
+        fields::DESTINATION.0,
+        fields::DESTINATION.1,
+        destination,
+    ));
 
     buf
 }
@@ -208,24 +226,40 @@ pub fn serialize_trust_set(
     let mut buf = Vec::new();
 
     // TransactionType
-    buf.extend_from_slice(&encode_uint16(fields::TRANSACTION_TYPE.0, fields::TRANSACTION_TYPE.1, TT_TRUST_SET));
+    buf.extend_from_slice(&encode_uint16(
+        fields::TRANSACTION_TYPE.0,
+        fields::TRANSACTION_TYPE.1,
+        TT_TRUST_SET,
+    ));
     // Flags
     buf.extend_from_slice(&encode_uint32(fields::FLAGS.0, fields::FLAGS.1, 0));
     // Sequence
-    buf.extend_from_slice(&encode_uint32(fields::SEQUENCE.0, fields::SEQUENCE.1, sequence));
+    buf.extend_from_slice(&encode_uint32(
+        fields::SEQUENCE.0,
+        fields::SEQUENCE.1,
+        sequence,
+    ));
     // LastLedgerSequence
-    buf.extend_from_slice(&encode_uint32(fields::LAST_LEDGER_SEQUENCE.0, fields::LAST_LEDGER_SEQUENCE.1, last_ledger_sequence));
+    buf.extend_from_slice(&encode_uint32(
+        fields::LAST_LEDGER_SEQUENCE.0,
+        fields::LAST_LEDGER_SEQUENCE.1,
+        last_ledger_sequence,
+    ));
     // Fee
     let mut fee_field = encode_field_id(fields::FEE.0, fields::FEE.1);
     fee_field.extend_from_slice(&encode_xrp_amount(fee_drops));
     buf.extend_from_slice(&fee_field);
     // Account
-    buf.extend_from_slice(&encode_account_id(fields::ACCOUNT.0, fields::ACCOUNT.1, account));
+    buf.extend_from_slice(&encode_account_id(
+        fields::ACCOUNT.0,
+        fields::ACCOUNT.1,
+        account,
+    ));
 
     // LimitAmount is encoded as an object (type 14, field 3)
     // For simplicity, we encode the currency/issuer/value inline
     buf.extend_from_slice(&encode_field_id(14, 3)); // LimitAmount object marker
-    // Encode issued amount: 48 bytes (8 value + 20 currency + 20 issuer)
+                                                    // Encode issued amount: 48 bytes (8 value + 20 currency + 20 issuer)
     let encoded_amount = encode_issued_amount(limit_amount);
     buf.extend_from_slice(&encoded_amount);
 
@@ -251,7 +285,9 @@ fn encode_iou_value(value: &str) -> [u8; 8] {
     }
     // Set IOU flag (bit 63) and positive flag (bit 62)
     let mut encoded = 0x8000_0000_0000_0000u64;
-    if val > 0.0 { encoded |= 0x4000_0000_0000_0000; }
+    if val > 0.0 {
+        encoded |= 0x4000_0000_0000_0000;
+    }
     // Store mantissa in lower bits (simplified)
     let abs_val = val.abs();
     let mantissa = (abs_val * 1_000_000.0) as u64;
@@ -297,10 +333,7 @@ pub struct SignerEntry {
 /// Build a SignerListSet transaction payload.
 ///
 /// Sets the list of signers and quorum on an account.
-pub fn serialize_signer_list(
-    signers: &[SignerEntry],
-    quorum: u32,
-) -> Vec<u8> {
+pub fn serialize_signer_list(signers: &[SignerEntry], quorum: u32) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.extend_from_slice(&quorum.to_be_bytes());
     for signer in signers {
@@ -439,8 +472,14 @@ mod tests {
     #[test]
     fn test_signer_list() {
         let signers = vec![
-            SignerEntry { account: [0xAA; 20], weight: 1 },
-            SignerEntry { account: [0xBB; 20], weight: 2 },
+            SignerEntry {
+                account: [0xAA; 20],
+                weight: 1,
+            },
+            SignerEntry {
+                account: [0xBB; 20],
+                weight: 2,
+            },
         ];
         let data = serialize_signer_list(&signers, 3);
         // 4 bytes quorum + 2 * (20 + 2) = 48

@@ -1,6 +1,6 @@
 //! Additional Solana program helpers: ATA, Memo, Stake, Durable Nonce.
 
-use super::transaction::{Instruction, AccountMeta};
+use super::transaction::{AccountMeta, Instruction};
 
 // ═══════════════════════════════════════════════════════════════════
 // Associated Token Account (ATA)
@@ -8,14 +8,14 @@ use super::transaction::{Instruction, AccountMeta};
 
 /// ATA Program ID: `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`.
 pub const ATA_PROGRAM_ID: [u8; 32] = [
-    140, 151, 37, 143, 78, 36, 137, 241, 187, 61, 16, 41, 20, 142, 13, 131,
-    11, 90, 19, 153, 218, 255, 16, 132, 4, 142, 123, 216, 219, 233, 248, 89,
+    140, 151, 37, 143, 78, 36, 137, 241, 187, 61, 16, 41, 20, 142, 13, 131, 11, 90, 19, 153, 218,
+    255, 16, 132, 4, 142, 123, 216, 219, 233, 248, 89,
 ];
 
 /// SPL Token Program ID.
 pub const SPL_TOKEN_PROGRAM_ID: [u8; 32] = [
-    6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172,
-    28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169,
+    6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237,
+    95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169,
 ];
 
 /// System Program ID.
@@ -26,12 +26,9 @@ const SYSTEM_PROGRAM_ID: [u8; 32] = [0; 32];
 /// ATA = PDA(ATA_PROGRAM_ID, [wallet, TOKEN_PROGRAM_ID, mint])
 ///
 /// Returns the deterministic ATA address as 32 bytes.
-pub fn derive_ata_address(
-    wallet: &[u8; 32],
-    mint: &[u8; 32],
-) -> [u8; 32] {
+pub fn derive_ata_address(wallet: &[u8; 32], mint: &[u8; 32]) -> [u8; 32] {
     // Simplified PDA derivation: SHA-256(seeds || program_id || "ProgramDerivedAddress")
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(wallet);
     hasher.update(SPL_TOKEN_PROGRAM_ID);
@@ -48,22 +45,18 @@ pub fn derive_ata_address(
 ///
 /// Creates the ATA for `wallet` and `mint` if it doesn't exist.
 /// The payer covers the rent-exempt balance.
-pub fn create_ata(
-    payer: [u8; 32],
-    wallet: [u8; 32],
-    mint: [u8; 32],
-) -> Instruction {
+pub fn create_ata(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Instruction {
     let ata = derive_ata_address(&wallet, &mint);
 
     Instruction {
         program_id: ATA_PROGRAM_ID,
         accounts: vec![
-            AccountMeta::new(payer, true),               // payer (writable, signer)
-            AccountMeta::new(ata, false),                 // ATA (writable)
-            AccountMeta::new_readonly(wallet, false),     // wallet owner
-            AccountMeta::new_readonly(mint, false),       // token mint
-            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),     // system program
-            AccountMeta::new_readonly(SPL_TOKEN_PROGRAM_ID, false),  // token program
+            AccountMeta::new(payer, true),            // payer (writable, signer)
+            AccountMeta::new(ata, false),             // ATA (writable)
+            AccountMeta::new_readonly(wallet, false), // wallet owner
+            AccountMeta::new_readonly(mint, false),   // token mint
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false), // system program
+            AccountMeta::new_readonly(SPL_TOKEN_PROGRAM_ID, false), // token program
         ],
         data: vec![0], // CreateAssociatedTokenAccount = index 0
     }
@@ -72,11 +65,7 @@ pub fn create_ata(
 /// Create an ATA instruction with idempotency (CreateIdempotent).
 ///
 /// Like `create_ata` but doesn't fail if the account already exists.
-pub fn create_ata_idempotent(
-    payer: [u8; 32],
-    wallet: [u8; 32],
-    mint: [u8; 32],
-) -> Instruction {
+pub fn create_ata_idempotent(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Instruction {
     let ata = derive_ata_address(&wallet, &mint);
 
     Instruction {
@@ -99,8 +88,8 @@ pub fn create_ata_idempotent(
 
 /// Memo Program ID (v2): `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`.
 pub const MEMO_PROGRAM_ID: [u8; 32] = [
-    5, 74, 83, 80, 248, 93, 200, 130, 214, 20, 165, 86, 114, 120, 138, 41,
-    109, 223, 30, 171, 171, 208, 166, 6, 120, 136, 73, 50, 244, 238, 246, 160,
+    5, 74, 83, 80, 248, 93, 200, 130, 214, 20, 165, 86, 114, 120, 138, 41, 109, 223, 30, 171, 171,
+    208, 166, 6, 120, 136, 73, 50, 244, 238, 246, 160,
 ];
 
 /// Create a Memo instruction (v2 — supports signer verification).
@@ -136,26 +125,26 @@ pub fn memo_unsigned(memo_text: &str) -> Instruction {
 
 /// Stake Program ID: `Stake11111111111111111111111111111111111111`.
 pub const STAKE_PROGRAM_ID: [u8; 32] = [
-    6, 161, 216, 23, 145, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    6, 161, 216, 23, 145, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0,
 ];
 
 /// Stake Config ID.
 pub const STAKE_CONFIG_ID: [u8; 32] = [
-    6, 161, 216, 23, 165, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    6, 161, 216, 23, 165, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0,
 ];
 
 /// Clock sysvar.
 pub const CLOCK_SYSVAR: [u8; 32] = [
-    6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182,
-    139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+    6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155,
+    75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
 ];
 
 /// Stake History sysvar.
 pub const STAKE_HISTORY_SYSVAR: [u8; 32] = [
-    6, 167, 213, 23, 25, 47, 10, 175, 198, 242, 101, 227, 251, 119, 204, 122,
-    218, 130, 197, 41, 208, 190, 59, 19, 110, 45, 0, 85, 32, 0, 0, 0,
+    6, 167, 213, 23, 25, 47, 10, 175, 198, 242, 101, 227, 251, 119, 204, 122, 218, 130, 197, 41,
+    208, 190, 59, 19, 110, 45, 0, 85, 32, 0, 0, 0,
 ];
 
 /// Create a DelegateStake instruction.
@@ -172,7 +161,7 @@ pub fn stake_delegate(
     Instruction {
         program_id: STAKE_PROGRAM_ID,
         accounts: vec![
-            AccountMeta::new(stake_account, false),      // stake account (writable)
+            AccountMeta::new(stake_account, false), // stake account (writable)
             AccountMeta::new_readonly(vote_account, false), // vote account
             AccountMeta::new_readonly(CLOCK_SYSVAR, false),
             AccountMeta::new_readonly(STAKE_HISTORY_SYSVAR, false),
@@ -186,10 +175,7 @@ pub fn stake_delegate(
 /// Create a Deactivate instruction.
 ///
 /// Deactivates a stake account, beginning the cooldown period.
-pub fn stake_deactivate(
-    stake_account: [u8; 32],
-    stake_authority: [u8; 32],
-) -> Instruction {
+pub fn stake_deactivate(stake_account: [u8; 32], stake_authority: [u8; 32]) -> Instruction {
     let mut data = vec![0u8; 4];
     data[0] = 5; // instruction index 5 = Deactivate
 
@@ -238,14 +224,11 @@ pub fn stake_withdraw(
 ///
 /// This must be the first instruction in a durable nonce transaction.
 /// It advances the nonce value, preventing replay.
-pub fn advance_nonce(
-    nonce_account: [u8; 32],
-    nonce_authority: [u8; 32],
-) -> Instruction {
+pub fn advance_nonce(nonce_account: [u8; 32], nonce_authority: [u8; 32]) -> Instruction {
     // Recent Sysvar ID
     let recent_blockhashes_sysvar: [u8; 32] = [
-        6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182,
-        139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 32, 0, 0, 0, 0,
+        6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163,
+        155, 75, 109, 92, 115, 85, 91, 32, 0, 0, 0, 0,
     ];
 
     let mut data = vec![0u8; 4];
@@ -265,18 +248,15 @@ pub fn advance_nonce(
 /// Create a NonceInitialize instruction.
 ///
 /// Initializes a nonce account with a specified authority.
-pub fn initialize_nonce(
-    nonce_account: [u8; 32],
-    nonce_authority: [u8; 32],
-) -> Instruction {
+pub fn initialize_nonce(nonce_account: [u8; 32], nonce_authority: [u8; 32]) -> Instruction {
     let recent_blockhashes_sysvar: [u8; 32] = [
-        6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182,
-        139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 32, 0, 0, 0, 0,
+        6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163,
+        155, 75, 109, 92, 115, 85, 91, 32, 0, 0, 0, 0,
     ];
     // Rent sysvar
     let rent_sysvar: [u8; 32] = [
-        6, 167, 213, 23, 25, 47, 10, 175, 198, 242, 101, 227, 251, 119, 204, 122,
-        218, 130, 197, 41, 208, 190, 59, 19, 110, 45, 0, 85, 31, 0, 0, 0,
+        6, 167, 213, 23, 25, 47, 10, 175, 198, 242, 101, 227, 251, 119, 204, 122, 218, 130, 197,
+        41, 208, 190, 59, 19, 110, 45, 0, 85, 31, 0, 0, 0,
     ];
 
     let mut data = vec![0u8; 36];
@@ -304,10 +284,9 @@ pub mod address_lookup_table {
 
     /// Address Lookup Table Program ID: `AddressLookupTab1e1111111111111111111111111`
     pub const ID: [u8; 32] = [
-        0x06, 0xa1, 0xd8, 0x17, 0x91, 0x37, 0x68, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x06, 0xa1, 0xd8, 0x17, 0x91, 0x37, 0x68, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
     ];
 
     /// Create an Address Lookup Table.
@@ -349,7 +328,7 @@ pub mod address_lookup_table {
     ) -> Instruction {
         let mut data = vec![0u8; 4];
         data[0] = 2; // ExtendLookupTable = 2
-        // u32 count of addresses
+                     // u32 count of addresses
         data.extend_from_slice(&(new_addresses.len() as u32).to_le_bytes());
         for addr in new_addresses {
             data.extend_from_slice(addr);
@@ -371,10 +350,7 @@ pub mod address_lookup_table {
     ///
     /// After deactivation, the table enters a cooldown and can then be closed.
     #[must_use]
-    pub fn deactivate(
-        lookup_table: [u8; 32],
-        authority: [u8; 32],
-    ) -> Instruction {
+    pub fn deactivate(lookup_table: [u8; 32], authority: [u8; 32]) -> Instruction {
         let mut data = vec![0u8; 4];
         data[0] = 3; // DeactivateLookupTable = 3
 
@@ -390,11 +366,7 @@ pub mod address_lookup_table {
 
     /// Close a deactivated Address Lookup Table and reclaim rent.
     #[must_use]
-    pub fn close(
-        lookup_table: [u8; 32],
-        authority: [u8; 32],
-        recipient: [u8; 32],
-    ) -> Instruction {
+    pub fn close(lookup_table: [u8; 32], authority: [u8; 32], recipient: [u8; 32]) -> Instruction {
         let mut data = vec![0u8; 4];
         data[0] = 4; // CloseLookupTable = 4
 
@@ -420,10 +392,9 @@ pub mod token_metadata {
 
     /// Metaplex Token Metadata Program ID: `metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s`
     pub const ID: [u8; 32] = [
-        0x0b, 0x74, 0x65, 0x78, 0x74, 0x50, 0x55, 0x73,
-        0x40, 0x6a, 0xc2, 0x14, 0x12, 0xf3, 0x26, 0xf7,
-        0x1b, 0x1e, 0xce, 0xf0, 0x77, 0x87, 0x28, 0x76,
-        0xf8, 0xba, 0x16, 0x1b, 0x70, 0x4c, 0x9f, 0x04,
+        0x0b, 0x74, 0x65, 0x78, 0x74, 0x50, 0x55, 0x73, 0x40, 0x6a, 0xc2, 0x14, 0x12, 0xf3, 0x26,
+        0xf7, 0x1b, 0x1e, 0xce, 0xf0, 0x77, 0x87, 0x28, 0x76, 0xf8, 0xba, 0x16, 0x1b, 0x70, 0x4c,
+        0x9f, 0x04,
     ];
 
     /// Token Metadata data for CreateMetadataAccountV3.
@@ -456,7 +427,7 @@ pub mod token_metadata {
     ///
     /// PDA: `["metadata", metadata_program_id, mint]`
     pub fn derive_metadata_address(mint: &[u8; 32]) -> [u8; 32] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         // Simplified PDA — in production use find_program_address
         let mut hasher = Sha256::new();
         hasher.update(b"metadata");
@@ -793,7 +764,13 @@ mod tests {
             }]),
         };
         let ix = token_metadata::create_metadata_v3(
-            metadata, MINT, PAYER, PAYER, update_auth, &data, true,
+            metadata,
+            MINT,
+            PAYER,
+            PAYER,
+            update_auth,
+            &data,
+            true,
         );
         assert_eq!(ix.program_id, token_metadata::ID);
         assert_eq!(ix.accounts.len(), 6);
@@ -803,9 +780,7 @@ mod tests {
     #[test]
     fn test_update_metadata_v2() {
         let metadata = [12; 32];
-        let ix = token_metadata::update_metadata_v2(
-            metadata, PAYER, None, None, Some(true), None,
-        );
+        let ix = token_metadata::update_metadata_v2(metadata, PAYER, None, None, Some(true), None);
         assert_eq!(ix.data[0], 15); // UpdateMetadataAccountV2
         assert_eq!(ix.accounts.len(), 2);
     }
@@ -822,7 +797,13 @@ mod tests {
             creators: None,
         };
         let ix = token_metadata::create_metadata_v3(
-            metadata, MINT, PAYER, PAYER, update_auth, &data, false,
+            metadata,
+            MINT,
+            PAYER,
+            PAYER,
+            update_auth,
+            &data,
+            false,
         );
         assert_eq!(ix.data[0], 33);
         // is_mutable should be false (0) near the end
@@ -831,4 +812,3 @@ mod tests {
         assert_eq!(*last_data, 0);
     }
 }
-

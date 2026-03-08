@@ -89,4 +89,3 @@ pub trait KeyPair: Signer {
         Zeroizing::new(kp)
     }
 }
-

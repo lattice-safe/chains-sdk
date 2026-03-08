@@ -4,12 +4,12 @@
 //! Ethereum address derivation, EIP-155/191/712 signing, and
 //! typed transaction encoding (EIP-2718/2930/1559/4844).
 
-pub mod rlp;
-pub mod transaction;
-pub mod siwe;
 pub mod abi;
-pub mod keystore;
 pub mod eips;
+pub mod keystore;
+pub mod rlp;
+pub mod siwe;
+pub mod transaction;
 
 use crate::error::SignerError;
 use crate::traits;
@@ -52,11 +52,7 @@ impl EthereumSignature {
         let mut s = [0u8; 32];
         r.copy_from_slice(&bytes[..32]);
         s.copy_from_slice(&bytes[32..64]);
-        Ok(Self {
-            r,
-            s,
-            v: bytes[64],
-        })
+        Ok(Self { r, s, v: bytes[64] })
     }
 }
 
@@ -168,9 +164,11 @@ impl EthereumSigner {
         // Convert v from legacy (27/28) to EIP-155 (35 + chain_id*2 + {0,1})
         let recovery_bit = sig.v - 27; // 0 or 1
         sig.v = (recovery_bit as u64)
-            .checked_add(chain_id.checked_mul(2).ok_or_else(|| {
-                SignerError::SigningFailed("chain_id overflow".into())
-            })?)
+            .checked_add(
+                chain_id
+                    .checked_mul(2)
+                    .ok_or_else(|| SignerError::SigningFailed("chain_id overflow".into()))?,
+            )
             .and_then(|v| v.checked_add(35))
             .ok_or_else(|| SignerError::SigningFailed("EIP-155 v overflow".into()))?
             as u8;
@@ -213,8 +211,8 @@ impl EthereumSigner {
     /// println!("Address: {}", signer.address_checksum());
     /// ```
     pub fn from_mnemonic(phrase: &str, passphrase: &str, index: u32) -> Result<Self, SignerError> {
+        use crate::hd_key::{DerivationPath, ExtendedPrivateKey};
         use crate::mnemonic::Mnemonic;
-        use crate::hd_key::{ExtendedPrivateKey, DerivationPath};
         use crate::traits::KeyPair;
 
         let mnemonic = Mnemonic::from_phrase(phrase)?;
@@ -304,9 +302,13 @@ pub fn ecrecover(message: &[u8], signature: &EthereumSignature) -> Result<[u8; 2
 }
 
 /// **ecrecover** from a pre-hashed 32-byte digest, useful for EIP-712 / EIP-191.
-pub fn ecrecover_digest(digest: &[u8; 32], signature: &EthereumSignature) -> Result<[u8; 20], SignerError> {
-    let rec_id = RecoveryId::try_from(signature.v.wrapping_sub(27))
-        .map_err(|_| SignerError::InvalidSignature("invalid recovery id (v must be 27 or 28)".into()))?;
+pub fn ecrecover_digest(
+    digest: &[u8; 32],
+    signature: &EthereumSignature,
+) -> Result<[u8; 20], SignerError> {
+    let rec_id = RecoveryId::try_from(signature.v.wrapping_sub(27)).map_err(|_| {
+        SignerError::InvalidSignature("invalid recovery id (v must be 27 or 28)".into())
+    })?;
 
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signature.r);
@@ -335,18 +337,26 @@ pub fn eip191_hash(message: &[u8]) -> [u8; 32] {
     // Prefix is 26 bytes + up to 20 digits = 46 bytes max
     let mut prefix_buf = [0u8; 64];
     let prefix_len = {
-        struct SliceWriter<'a> { buf: &'a mut [u8], pos: usize }
+        struct SliceWriter<'a> {
+            buf: &'a mut [u8],
+            pos: usize,
+        }
         impl<'a> Write for SliceWriter<'a> {
             fn write_str(&mut self, s: &str) -> core::fmt::Result {
                 let bytes = s.as_bytes();
                 let end = self.pos + bytes.len();
-                if end > self.buf.len() { return Err(core::fmt::Error); }
+                if end > self.buf.len() {
+                    return Err(core::fmt::Error);
+                }
                 self.buf[self.pos..end].copy_from_slice(bytes);
                 self.pos = end;
                 Ok(())
             }
         }
-        let mut w = SliceWriter { buf: &mut prefix_buf, pos: 0 };
+        let mut w = SliceWriter {
+            buf: &mut prefix_buf,
+            pos: 0,
+        };
         // write_fmt cannot fail here — buffer is large enough
         let _ = write!(w, "\x19Ethereum Signed Message:\n{}", message.len());
         w.pos
@@ -436,7 +446,6 @@ pub fn eip712_hash(domain_separator: &[u8; 32], struct_hash: &[u8; 32]) -> [u8; 
     hash.copy_from_slice(&Keccak256::digest(payload));
     hash
 }
-
 
 impl traits::Signer for EthereumSigner {
     type Signature = EthereumSignature;
@@ -623,8 +632,7 @@ mod tests {
         let signer = EthereumSigner::generate().unwrap();
         let msg = b"hello ethereum";
         let sig = signer.sign(msg).unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(msg, &sig).unwrap());
     }
 
@@ -682,8 +690,7 @@ mod tests {
                 .unwrap();
         let signer = EthereumSigner::from_bytes(&privkey).unwrap();
         let sig = signer.sign(b"hello").unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(b"hello", &sig).unwrap());
         // v must be 27 or 28
         assert!(sig.v == 27 || sig.v == 28);
@@ -703,8 +710,7 @@ mod tests {
     fn test_tampered_sig_fails() {
         let signer = EthereumSigner::generate().unwrap();
         let sig = signer.sign(b"test tamper").unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
 
         // Flip a byte in r
         let mut tampered = sig.clone();
@@ -729,8 +735,7 @@ mod tests {
     fn test_empty_message() {
         let signer = EthereumSigner::generate().unwrap();
         let sig = signer.sign(b"").unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(b"", &sig).unwrap());
     }
 
@@ -739,8 +744,7 @@ mod tests {
         let signer = EthereumSigner::generate().unwrap();
         let msg = vec![0xab_u8; 1_000_000]; // 1 MB
         let sig = signer.sign(&msg).unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(&msg, &sig).unwrap());
     }
 
@@ -754,8 +758,7 @@ mod tests {
         let sig_pre = signer.sign_prehashed(&digest).unwrap();
 
         // Both should verify
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(msg, &sig_raw).unwrap());
         assert!(verifier.verify_prehashed(&digest, &sig_pre).unwrap());
     }
@@ -766,8 +769,7 @@ mod tests {
         let msg = b"verify prehash";
         let digest = Keccak256::digest(msg);
         let sig = signer.sign(msg).unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify_prehashed(&digest, &sig).unwrap());
     }
 
@@ -858,7 +860,9 @@ mod tests {
         assert!(sig.v == 27 || sig.v == 28);
 
         // Verify
-        assert!(verifier.verify_typed_data(&domain_sep, &struct_hash, &sig).unwrap());
+        assert!(verifier
+            .verify_typed_data(&domain_sep, &struct_hash, &sig)
+            .unwrap());
     }
 
     #[test]
@@ -872,7 +876,9 @@ mod tests {
 
         // Verify with wrong domain must fail
         let wrong_domain = [0xFF_u8; 32];
-        let result = verifier.verify_typed_data(&wrong_domain, &struct_hash, &sig).unwrap();
+        let result = verifier
+            .verify_typed_data(&wrong_domain, &struct_hash, &sig)
+            .unwrap();
         assert!(!result);
     }
 

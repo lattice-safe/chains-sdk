@@ -13,8 +13,8 @@
 //!
 //! Because the constant term is zero, the group secret `s = f(0)` is unchanged.
 
-use crate::error::SignerError;
 use super::keygen::{self, KeyPackage, VssCommitments};
+use crate::error::SignerError;
 use k256::{ProjectivePoint, Scalar};
 use zeroize::Zeroizing;
 
@@ -79,7 +79,9 @@ pub fn generate_refresh(
 
     Ok(RefreshPackage {
         sender: my_id,
-        commitments: VssCommitments { commitments: commitment_points },
+        commitments: VssCommitments {
+            commitments: commitment_points,
+        },
         deltas,
     })
 }
@@ -104,20 +106,26 @@ pub fn apply_refresh(
     // Verify each refresh package's delta against VSS commitments
     for pkg in refresh_packages {
         if my_idx >= pkg.deltas.len() {
-            return Err(SignerError::ParseError("refresh package missing delta".into()));
+            return Err(SignerError::ParseError(
+                "refresh package missing delta".into(),
+            ));
         }
         // Verify: the commitment at index 0 should be identity (zero secret)
         let c0 = pkg.commitments.commitments[0];
         if ProjectivePoint::from(c0) != ProjectivePoint::IDENTITY {
             return Err(SignerError::SigningFailed(format!(
-                "refresh package from {} has non-zero constant term", pkg.sender
+                "refresh package from {} has non-zero constant term",
+                pkg.sender
             )));
         }
         // Verify delta against VSS commitments
-        let valid = pkg.commitments.verify_share(key_package.identifier, &pkg.deltas[my_idx]);
+        let valid = pkg
+            .commitments
+            .verify_share(key_package.identifier, &pkg.deltas[my_idx]);
         if !valid {
             return Err(SignerError::SigningFailed(format!(
-                "VSS verification failed for refresh from participant {}", pkg.sender
+                "VSS verification failed for refresh from participant {}",
+                pkg.sender
             )));
         }
     }
@@ -186,7 +194,10 @@ mod tests {
         assert_eq!(new_kp2.group_public_key, original_gpk);
 
         // Shares should have changed
-        assert_ne!(*new_kp1.secret_share(), *kgen.key_packages[0].secret_share());
+        assert_ne!(
+            *new_kp1.secret_share(),
+            *kgen.key_packages[0].secret_share()
+        );
     }
 
     #[test]
@@ -212,8 +223,10 @@ mod tests {
         let s2 = signing::sign(&new_kp2, n2, &comms, msg).unwrap();
         let sig = signing::aggregate(&comms, &[s1, s2], &group_pk, msg).unwrap();
 
-        assert!(signing::verify(&sig, &group_pk, msg).unwrap(),
-            "refreshed shares must produce valid signatures");
+        assert!(
+            signing::verify(&sig, &group_pk, msg).unwrap(),
+            "refreshed shares must produce valid signatures"
+        );
     }
 
     #[test]

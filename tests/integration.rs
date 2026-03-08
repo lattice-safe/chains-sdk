@@ -14,10 +14,9 @@ mod cross_chain {
     /// because they use different hash functions (Keccak-256 vs Double SHA-256).
     #[test]
     fn test_same_key_different_chain_signatures() {
-        let privkey = hex::decode(
-            "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35",
-        )
-        .unwrap();
+        let privkey =
+            hex::decode("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
+                .unwrap();
 
         let eth = EthereumSigner::from_bytes(&privkey).unwrap();
         let btc = BitcoinSigner::from_bytes(&privkey).unwrap();
@@ -28,17 +27,19 @@ mod cross_chain {
 
         // Signatures must differ (different hash functions)
         let eth_bytes = eth_sig.to_bytes();
-        assert_ne!(&eth_bytes[..64], &btc_sig.der_bytes()[..64.min(btc_sig.der_bytes().len())]);
+        assert_ne!(
+            &eth_bytes[..64],
+            &btc_sig.der_bytes()[..64.min(btc_sig.der_bytes().len())]
+        );
     }
 
     /// Same private key bytes must produce the same public key on ETH and BTC
     /// (both are secp256k1).
     #[test]
     fn test_same_key_same_pubkey() {
-        let privkey = hex::decode(
-            "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35",
-        )
-        .unwrap();
+        let privkey =
+            hex::decode("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
+                .unwrap();
 
         let eth = EthereumSigner::from_bytes(&privkey).unwrap();
         let btc = BitcoinSigner::from_bytes(&privkey).unwrap();
@@ -51,16 +52,14 @@ mod cross_chain {
 #[cfg(all(feature = "solana", feature = "xrp"))]
 mod ed25519_cross {
     use trad_signer::solana::SolanaSigner;
-    use trad_signer::xrp::XrpEddsaSigner;
     use trad_signer::traits::{KeyPair, Signer};
+    use trad_signer::xrp::XrpEddsaSigner;
 
     /// Same Ed25519 seed produces the same public key on Solana and XRP.
     #[test]
     fn test_same_ed25519_key_cross_chain() {
-        let seed = hex::decode(
-            "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
-        )
-        .unwrap();
+        let seed = hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+            .unwrap();
 
         let sol = SolanaSigner::from_bytes(&seed).unwrap();
         let xrp = XrpEddsaSigner::from_bytes(&seed).unwrap();
@@ -78,20 +77,18 @@ mod ed25519_cross {
 
 #[cfg(feature = "ethereum")]
 mod eip712_integration {
-    use trad_signer::ethereum::{EthereumSigner, EthereumVerifier, Eip712Domain, eip712_hash};
-    use trad_signer::traits::{KeyPair, Signer, Verifier};
     use sha3::{Digest, Keccak256};
+    use trad_signer::ethereum::{eip712_hash, Eip712Domain, EthereumSigner, EthereumVerifier};
+    use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     /// Full EIP-712 Permit flow: domain + struct type hash + encoding.
     #[test]
     fn test_eip712_permit_flow() {
-        let privkey = hex::decode(
-            "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35",
-        )
-        .unwrap();
+        let privkey =
+            hex::decode("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
+                .unwrap();
         let signer = EthereumSigner::from_bytes(&privkey).unwrap();
-        let verifier =
-            EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
 
         let contract_addr: [u8; 20] = [0xCC; 20];
         let domain = Eip712Domain {
@@ -136,16 +133,14 @@ mod eip712_integration {
 
 #[cfg(feature = "bls")]
 mod bls_integration {
-    use trad_signer::bls::{BlsSigner, aggregate_signatures, verify_aggregated};
+    use trad_signer::bls::{aggregate_signatures, verify_aggregated, BlsSigner};
     use trad_signer::traits::{KeyPair, Signer};
 
     /// Aggregate 100 signatures and verify
     #[test]
     fn test_large_aggregation() {
         let msg = b"consensus round 42";
-        let signers: Vec<BlsSigner> = (0..20)
-            .map(|_| BlsSigner::generate().unwrap())
-            .collect();
+        let signers: Vec<BlsSigner> = (0..20).map(|_| BlsSigner::generate().unwrap()).collect();
         let sigs: Vec<_> = signers.iter().map(|s| s.sign(msg).unwrap()).collect();
         let pks: Vec<_> = signers.iter().map(|s| s.public_key()).collect();
 
@@ -156,10 +151,10 @@ mod bls_integration {
 
 #[cfg(all(feature = "ethereum", feature = "bitcoin", feature = "neo"))]
 mod trait_consistency {
-    use trad_signer::traits::{KeyPair, Signer};
-    use trad_signer::ethereum::EthereumSigner;
     use trad_signer::bitcoin::BitcoinSigner;
+    use trad_signer::ethereum::EthereumSigner;
     use trad_signer::neo::NeoSigner;
+    use trad_signer::traits::{KeyPair, Signer};
 
     /// All ECDSA signers should produce 32-byte private keys.
     #[test]
@@ -188,12 +183,17 @@ mod trait_consistency {
 
 // ─── Mnemonic → HD → Multi-Chain Signing Workflow ───────────────
 
-#[cfg(all(feature = "mnemonic", feature = "ethereum", feature = "bitcoin", feature = "solana"))]
+#[cfg(all(
+    feature = "mnemonic",
+    feature = "ethereum",
+    feature = "bitcoin",
+    feature = "solana"
+))]
 mod mnemonic_multichaain {
-    use trad_signer::mnemonic::Mnemonic;
-    use trad_signer::hd_key::{ExtendedPrivateKey, DerivationPath};
-    use trad_signer::ethereum::EthereumSigner;
     use trad_signer::bitcoin::BitcoinSigner;
+    use trad_signer::ethereum::EthereumSigner;
+    use trad_signer::hd_key::{DerivationPath, ExtendedPrivateKey};
+    use trad_signer::mnemonic::Mnemonic;
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     /// Full workflow: generate mnemonic → derive HD keys → sign on ETH, BTC, SOL
@@ -210,11 +210,14 @@ mod mnemonic_multichaain {
         let eth_sig = eth_signer.sign(b"cross-chain test").unwrap();
         let eth_verifier = trad_signer::ethereum::EthereumVerifier::from_public_key_bytes(
             &eth_signer.public_key_bytes(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(eth_verifier.verify(b"cross-chain test", &eth_sig).unwrap());
 
         // BTC: m/84'/0'/0'/0/0
-        let btc_key = master.derive_path(&DerivationPath::bitcoin_segwit(0)).unwrap();
+        let btc_key = master
+            .derive_path(&DerivationPath::bitcoin_segwit(0))
+            .unwrap();
         let btc_signer = BitcoinSigner::from_bytes(&btc_key.private_key_bytes()).unwrap();
         let btc_addr = btc_signer.p2wpkh_address().unwrap();
         assert!(btc_addr.starts_with("bc1q"));
@@ -231,10 +234,10 @@ mod mnemonic_multichaain {
 
 #[cfg(all(feature = "bip85", feature = "mnemonic", feature = "bitcoin"))]
 mod bip85_workflow {
-    use trad_signer::hd_key::ExtendedPrivateKey;
     use trad_signer::bip85;
-    use trad_signer::mnemonic::Mnemonic;
     use trad_signer::bitcoin::BitcoinSigner;
+    use trad_signer::hd_key::ExtendedPrivateKey;
+    use trad_signer::mnemonic::Mnemonic;
     use trad_signer::traits::{KeyPair, Signer};
 
     /// BIP-85: master → child mnemonic → derive BTC → sign
@@ -345,10 +348,10 @@ mod threshold_e2e {
 mod psbt_e2e {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use trad_signer::bitcoin::BitcoinSigner;
     use trad_signer::bitcoin::psbt::v0::Psbt;
     use trad_signer::bitcoin::tapscript::SighashType;
     use trad_signer::bitcoin::transaction::*;
+    use trad_signer::bitcoin::BitcoinSigner;
     use trad_signer::traits::{KeyPair, Signer};
 
     #[test]
@@ -361,7 +364,10 @@ mod psbt_e2e {
         // 2. Build a raw unsigned transaction
         let mut tx = Transaction::new(2);
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: [0xAA; 32], vout: 0 },
+            previous_output: OutPoint {
+                txid: [0xAA; 32],
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFF,
         });
@@ -412,15 +418,19 @@ mod psbt_e2e {
 
         let mut tx = Transaction::new(2);
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: [0xCC; 32], vout: 1 },
+            previous_output: OutPoint {
+                txid: [0xCC; 32],
+                vout: 1,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFE,
         });
         tx.outputs.push(TxOut {
             value: 30_000,
-            script_pubkey: vec![0x00, 0x14, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
-                0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
-                0xDD, 0xDD, 0xDD, 0xDD],
+            script_pubkey: vec![
+                0x00, 0x14, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
+                0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
+            ],
         });
         psbt_add_output_placeholder();
 
@@ -432,7 +442,8 @@ mod psbt_e2e {
         spk.extend_from_slice(&pubkey_hash);
         psbt.set_witness_utxo(idx, 50_000, &spk);
 
-        psbt.sign_segwit_input(idx, &signer, SighashType::All).unwrap();
+        psbt.sign_segwit_input(idx, &signer, SighashType::All)
+            .unwrap();
 
         // Serialize → Deserialize roundtrip
         let serialized = psbt.serialize();
@@ -483,10 +494,10 @@ mod bip322_vectors {
     /// BIP-322 sign→verify roundtrip with P2WPKH
     #[test]
     fn test_bip322_sign_verify_roundtrip_p2wpkh() {
-        use trad_signer::bitcoin::BitcoinSigner;
         use trad_signer::bitcoin::sighash;
         use trad_signer::bitcoin::tapscript::SighashType;
         use trad_signer::bitcoin::transaction::*;
+        use trad_signer::bitcoin::BitcoinSigner;
         use trad_signer::traits::{KeyPair, Signer};
 
         let signer = BitcoinSigner::generate().unwrap();
@@ -509,14 +520,23 @@ mod bip322_vectors {
         let mut txid_internal = to_spend_txid;
         txid_internal.reverse();
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: txid_internal, vout: 0 },
+            previous_output: OutPoint {
+                txid: txid_internal,
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0,
         });
-        tx.outputs.push(TxOut { value: 0, script_pubkey: vec![0x6a] });
+        tx.outputs.push(TxOut {
+            value: 0,
+            script_pubkey: vec![0x6a],
+        });
 
         let sc = sighash::p2wpkh_script_code(&pubkey_hash);
-        let prev = sighash::PrevOut { script_code: sc, value: 0 };
+        let prev = sighash::PrevOut {
+            script_code: sc,
+            value: 0,
+        };
         let sh = sighash::segwit_v0_sighash(&tx, 0, &prev, SighashType::All).unwrap();
         let sig = signer.sign_prehashed(&sh).unwrap();
 
@@ -559,14 +579,24 @@ mod bip322_vectors {
         let mut txid_internal = to_spend_txid;
         txid_internal.reverse();
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: txid_internal, vout: 0 },
+            previous_output: OutPoint {
+                txid: txid_internal,
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0,
         });
-        tx.outputs.push(TxOut { value: 0, script_pubkey: vec![0x6a] });
+        tx.outputs.push(TxOut {
+            value: 0,
+            script_pubkey: vec![0x6a],
+        });
 
-        let prevouts = vec![TxOut { value: 0, script_pubkey: script_pk }];
-        let sh = sighash::taproot_key_path_sighash(&tx, 0, &prevouts, SighashType::Default).unwrap();
+        let prevouts = vec![TxOut {
+            value: 0,
+            script_pubkey: script_pk,
+        }];
+        let sh =
+            sighash::taproot_key_path_sighash(&tx, 0, &prevouts, SighashType::Default).unwrap();
         let sig = signer.sign(&sh).unwrap();
 
         // Verify
@@ -602,7 +632,8 @@ mod bls_threshold_e2e {
 
         // Try 3 different 3-of-5 subsets
         for subset in &[[0, 1, 2], [0, 2, 4], [1, 3, 4]] {
-            let sigs: Vec<_> = subset.iter()
+            let sigs: Vec<_> = subset
+                .iter()
                 .map(|&i| kgen.key_shares()[i].sign(msg).unwrap())
                 .collect();
             let agg = threshold::aggregate_partial_sigs(&sigs, msg).unwrap();
@@ -623,7 +654,8 @@ mod edge_cases {
         let sig = signer.sign(b"").unwrap();
         let verifier = trad_signer::ethereum::EthereumVerifier::from_public_key_bytes(
             &signer.public_key_bytes(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(verifier.verify(b"", &sig).unwrap());
     }
 
@@ -632,9 +664,9 @@ mod edge_cases {
         let signer = trad_signer::solana::SolanaSigner::generate().unwrap();
         let large_msg = vec![0xAA; 10_000];
         let sig = signer.sign(&large_msg).unwrap();
-        let verifier = trad_signer::solana::SolanaVerifier::from_public_key_bytes(
-            &signer.public_key_bytes(),
-        ).unwrap();
+        let verifier =
+            trad_signer::solana::SolanaVerifier::from_public_key_bytes(&signer.public_key_bytes())
+                .unwrap();
         assert!(verifier.verify(&large_msg, &sig).unwrap());
     }
 
@@ -645,9 +677,9 @@ mod edge_cases {
         let msg = b"wrong key test";
         let sig = signer1.sign(msg).unwrap();
 
-        let verifier2 = trad_signer::solana::SolanaVerifier::from_public_key_bytes(
-            &signer2.public_key_bytes(),
-        ).unwrap();
+        let verifier2 =
+            trad_signer::solana::SolanaVerifier::from_public_key_bytes(&signer2.public_key_bytes())
+                .unwrap();
         assert!(!verifier2.verify(msg, &sig).unwrap());
     }
 }
@@ -668,7 +700,8 @@ mod eip2333_integration {
 
         let verifier = trad_signer::bls::BlsVerifier::from_public_key_bytes(
             &Signer::public_key_bytes(&signer),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(verifier.verify(msg, &sig).unwrap());
     }
 
@@ -685,7 +718,10 @@ mod eip2333_integration {
 
         // But same seed + index is deterministic
         let s0_again = eip2333::validator_signer(&seed, 0).unwrap();
-        assert_eq!(Signer::public_key_bytes(&s0), Signer::public_key_bytes(&s0_again));
+        assert_eq!(
+            Signer::public_key_bytes(&s0),
+            Signer::public_key_bytes(&s0_again)
+        );
     }
 
     #[test]
@@ -718,12 +754,15 @@ mod frost_large {
         // Use participants 0, 2, 4, 6, 8
         let indices: Vec<usize> = vec![0, 2, 4, 6, 8];
 
-        let nonces: Vec<_> = indices.iter()
+        let nonces: Vec<_> = indices
+            .iter()
             .map(|&i| signing::commit(&kgen.key_packages[i]).unwrap())
             .collect();
         let comms: Vec<_> = nonces.iter().map(|n| n.commitments.clone()).collect();
 
-        let sigs: Vec<_> = indices.iter().zip(nonces.into_iter())
+        let sigs: Vec<_> = indices
+            .iter()
+            .zip(nonces.into_iter())
             .map(|(&i, nonce)| signing::sign(&kgen.key_packages[i], nonce, &comms, msg).unwrap())
             .collect();
 

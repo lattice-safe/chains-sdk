@@ -90,8 +90,8 @@ pub fn bech32_encode(
     program: &[u8],
 ) -> Result<String, SignerError> {
     use bech32::Hrp;
-    let hrp = Hrp::parse(hrp)
-        .map_err(|e| SignerError::EncodingError(format!("bech32 hrp: {e}")))?;
+    let hrp =
+        Hrp::parse(hrp).map_err(|e| SignerError::EncodingError(format!("bech32 hrp: {e}")))?;
     let version = bech32::Fe32::try_from(witness_version)
         .map_err(|e| SignerError::EncodingError(format!("witness version: {e}")))?;
     bech32::segwit::encode(hrp, version, program)
@@ -140,7 +140,16 @@ mod tests {
 
     #[test]
     fn test_compact_size_roundtrip() {
-        for val in [0u64, 1, 252, 253, 0xFFFF, 0x10000, 0xFFFF_FFFF, 0x1_0000_0000] {
+        for val in [
+            0u64,
+            1,
+            252,
+            253,
+            0xFFFF,
+            0x10000,
+            0xFFFF_FFFF,
+            0x1_0000_0000,
+        ] {
             let mut buf = Vec::new();
             encode_compact_size(&mut buf, val);
             let mut offset = 0;
@@ -218,7 +227,9 @@ mod tests {
     #[test]
     fn test_bech32_bip350_p2tr_vector() {
         // BIP-350: P2TR address with witness version 1
-        let program = hex::decode("a60869f0dbcf1dc659c9cecbee736b12006a35d655ac7e1caeff5ebc1085a044").unwrap();
+        let program =
+            hex::decode("a60869f0dbcf1dc659c9cecbee736b12006a35d655ac7e1caeff5ebc1085a044")
+                .unwrap();
         let addr = bech32_encode("bc", 1, &program).unwrap();
         assert!(addr.starts_with("bc1p"));
         assert_eq!(addr.len(), 62); // Bech32m P2TR addresses are 62 chars

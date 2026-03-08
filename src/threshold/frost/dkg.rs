@@ -13,8 +13,8 @@
 //! 3. **Finalization**: Each participant sums all received shares to get their
 //!    final secret share.
 
-use crate::error::SignerError;
 use super::keygen::{self, KeyPackage, VssCommitments};
+use crate::error::SignerError;
 use k256::{AffinePoint, ProjectivePoint, Scalar};
 use zeroize::Zeroizing;
 
@@ -90,7 +90,9 @@ pub fn dkg_round1(
 
         packages.push(DkgRound1Package {
             identifier: i,
-            commitments: VssCommitments { commitments: commitment_points },
+            commitments: VssCommitments {
+                commitments: commitment_points,
+            },
             secret_coefficients: Zeroizing::new(coefficients),
         });
     }
@@ -159,7 +161,8 @@ pub fn dkg_finalize(
             .verify_share(participant_id, &share.share);
         if !valid {
             return Err(SignerError::SigningFailed(format!(
-                "VSS verification failed for share from participant {}", share.sender
+                "VSS verification failed for share from participant {}",
+                share.sender
             )));
         }
     }

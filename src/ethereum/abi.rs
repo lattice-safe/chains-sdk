@@ -72,8 +72,10 @@ impl AbiValue {
 
     /// Whether this type is dynamic in the ABI encoding sense.
     fn is_dynamic(&self) -> bool {
-        matches!(self, AbiValue::Bytes(_) | AbiValue::String(_) | AbiValue::Array(_))
-            || matches!(self, AbiValue::Tuple(items) if items.iter().any(|i| i.is_dynamic()))
+        matches!(
+            self,
+            AbiValue::Bytes(_) | AbiValue::String(_) | AbiValue::Array(_)
+        ) || matches!(self, AbiValue::Tuple(items) if items.iter().any(|i| i.is_dynamic()))
     }
 
     /// Encode this value into the head (fixed) part.
@@ -259,7 +261,9 @@ pub fn event_topic(signature: &str) -> [u8; 32] {
 /// Decode a single `uint256` from 32 bytes.
 pub fn decode_uint256(data: &[u8]) -> Result<[u8; 32], SignerError> {
     if data.len() < 32 {
-        return Err(SignerError::ParseError("ABI: need 32 bytes for uint256".into()));
+        return Err(SignerError::ParseError(
+            "ABI: need 32 bytes for uint256".into(),
+        ));
     }
     let mut buf = [0u8; 32];
     buf.copy_from_slice(&data[..32]);
@@ -271,7 +275,9 @@ pub fn decode_uint256_as_u64(data: &[u8]) -> Result<u64, SignerError> {
     let raw = decode_uint256(data)?;
     // Check that the first 24 bytes are zero
     if raw[..24].iter().any(|b| *b != 0) {
-        return Err(SignerError::ParseError("ABI: uint256 overflow for u64".into()));
+        return Err(SignerError::ParseError(
+            "ABI: uint256 overflow for u64".into(),
+        ));
     }
     let mut buf = [0u8; 8];
     buf.copy_from_slice(&raw[24..32]);
@@ -281,7 +287,9 @@ pub fn decode_uint256_as_u64(data: &[u8]) -> Result<u64, SignerError> {
 /// Decode an `address` from 32 padded bytes.
 pub fn decode_address(data: &[u8]) -> Result<[u8; 20], SignerError> {
     if data.len() < 32 {
-        return Err(SignerError::ParseError("ABI: need 32 bytes for address".into()));
+        return Err(SignerError::ParseError(
+            "ABI: need 32 bytes for address".into(),
+        ));
     }
     let mut addr = [0u8; 20];
     addr.copy_from_slice(&data[12..32]);
@@ -291,7 +299,9 @@ pub fn decode_address(data: &[u8]) -> Result<[u8; 20], SignerError> {
 /// Decode a `bool` from 32 padded bytes.
 pub fn decode_bool(data: &[u8]) -> Result<bool, SignerError> {
     if data.len() < 32 {
-        return Err(SignerError::ParseError("ABI: need 32 bytes for bool".into()));
+        return Err(SignerError::ParseError(
+            "ABI: need 32 bytes for bool".into(),
+        ));
     }
     Ok(data[31] != 0)
 }
@@ -304,7 +314,9 @@ pub fn decode_bytes(data: &[u8], param_offset: usize) -> Result<Vec<u8>, SignerE
     let offset = decode_uint256_as_u64(&data[param_offset..])? as usize;
     // At `offset`: length (32 bytes) + data
     if offset + 32 > data.len() {
-        return Err(SignerError::ParseError("ABI: bytes offset out of range".into()));
+        return Err(SignerError::ParseError(
+            "ABI: bytes offset out of range".into(),
+        ));
     }
     let len = decode_uint256_as_u64(&data[offset..])? as usize;
     let start = offset + 32;
@@ -317,7 +329,8 @@ pub fn decode_bytes(data: &[u8], param_offset: usize) -> Result<Vec<u8>, SignerE
 /// Decode a dynamic `string` from ABI-encoded data at a given offset.
 pub fn decode_string(data: &[u8], param_offset: usize) -> Result<String, SignerError> {
     let bytes = decode_bytes(data, param_offset)?;
-    String::from_utf8(bytes).map_err(|e| SignerError::ParseError(format!("ABI: invalid UTF-8: {e}")))
+    String::from_utf8(bytes)
+        .map_err(|e| SignerError::ParseError(format!("ABI: invalid UTF-8: {e}")))
 }
 
 // ─── Contract Deployment ───────────────────────────────────────────
@@ -598,17 +611,14 @@ mod tests {
         let s = "hello";
         let encoded = encode(&[AbiValue::String(s.to_string())]);
         assert_eq!(encoded[31], 32); // offset
-        assert_eq!(encoded[63], 5);  // length
+        assert_eq!(encoded[63], 5); // length
         assert_eq!(&encoded[64..69], b"hello");
     }
 
     #[test]
     fn test_encode_multiple_static() {
         // abi.encode(address, uint256)
-        let encoded = encode(&[
-            AbiValue::Address([0xBB; 20]),
-            AbiValue::from_u64(100),
-        ]);
+        let encoded = encode(&[AbiValue::Address([0xBB; 20]), AbiValue::from_u64(100)]);
         assert_eq!(encoded.len(), 64); // 2 × 32
         assert_eq!(&encoded[12..32], &[0xBB; 20]);
         assert_eq!(encoded[63], 100);
@@ -617,10 +627,7 @@ mod tests {
     #[test]
     fn test_function_encode_transfer() {
         let transfer = Function::new("transfer(address,uint256)");
-        let calldata = transfer.encode(&[
-            AbiValue::Address([0xCC; 20]),
-            AbiValue::from_u64(1000),
-        ]);
+        let calldata = transfer.encode(&[AbiValue::Address([0xCC; 20]), AbiValue::from_u64(1000)]);
         assert_eq!(&calldata[..4], &hex::decode("a9059cbb").unwrap());
         assert_eq!(calldata.len(), 4 + 64);
     }
@@ -629,10 +636,7 @@ mod tests {
 
     #[test]
     fn test_encode_packed_address_uint() {
-        let packed = encode_packed(&[
-            AbiValue::Address([0xAA; 20]),
-            AbiValue::from_u64(1),
-        ]);
+        let packed = encode_packed(&[AbiValue::Address([0xAA; 20]), AbiValue::from_u64(1)]);
         // address = 20 bytes + uint = 1 byte (stripped)
         assert_eq!(&packed[..20], &[0xAA; 20]);
         assert_eq!(packed[20], 1);
@@ -716,10 +720,13 @@ mod tests {
             &signer,
             &[0x60, 0x00],
             &[],
-            1, 0,
-            2_000_000_000, 100_000_000_000,
+            1,
+            0,
+            2_000_000_000,
+            100_000_000_000,
             1_000_000,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(signed.raw_tx()[0], 0x02); // EIP-1559
     }
 
@@ -739,7 +746,9 @@ mod tests {
         let call = ContractCall::new([0xAA; 20], "transfer(address,uint256)")
             .args(&[AbiValue::Address([0xBB; 20]), AbiValue::from_u64(1000)])
             .value(0);
-        let signed = call.sign(&signer, 1, 0, 2_000_000_000, 100_000_000_000, 100_000).unwrap();
+        let signed = call
+            .sign(&signer, 1, 0, 2_000_000_000, 100_000_000_000, 100_000)
+            .unwrap();
         assert_eq!(signed.raw_tx()[0], 0x02);
     }
 

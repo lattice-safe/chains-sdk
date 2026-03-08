@@ -88,7 +88,7 @@ fn bench_solana(c: &mut Criterion) {
 }
 
 fn bench_bls(c: &mut Criterion) {
-    use trad_signer::bls::{BlsSigner, BlsVerifier, aggregate_signatures, verify_aggregated};
+    use trad_signer::bls::{aggregate_signatures, verify_aggregated, BlsSigner, BlsVerifier};
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     let signer = BlsSigner::generate().unwrap();
@@ -96,9 +96,7 @@ fn bench_bls(c: &mut Criterion) {
     let msg = b"benchmark message for bls12-381";
     let sig = signer.sign(msg).unwrap();
 
-    c.bench_function("bls_keygen", |b| {
-        b.iter(|| BlsSigner::generate().unwrap())
-    });
+    c.bench_function("bls_keygen", |b| b.iter(|| BlsSigner::generate().unwrap()));
     c.bench_function("bls_sign", |b| {
         b.iter(|| signer.sign(black_box(msg)).unwrap())
     });
@@ -181,8 +179,8 @@ criterion_group!(
 criterion_main!(benches);
 
 fn bench_xrp(c: &mut Criterion) {
-    use trad_signer::xrp::{XrpEcdsaSigner, XrpEcdsaVerifier, XrpEddsaSigner, XrpEddsaVerifier};
     use trad_signer::traits::{KeyPair, Signer, Verifier};
+    use trad_signer::xrp::{XrpEcdsaSigner, XrpEcdsaVerifier, XrpEddsaSigner, XrpEddsaVerifier};
 
     let msg = b"benchmark message for xrp";
 
@@ -195,7 +193,11 @@ fn bench_xrp(c: &mut Criterion) {
         b.iter(|| ecdsa.sign(black_box(msg)).unwrap())
     });
     c.bench_function("xrp_ecdsa_verify", |b| {
-        b.iter(|| ecdsa_v.verify(black_box(msg), black_box(&ecdsa_sig)).unwrap())
+        b.iter(|| {
+            ecdsa_v
+                .verify(black_box(msg), black_box(&ecdsa_sig))
+                .unwrap()
+        })
     });
 
     // EdDSA
@@ -207,7 +209,11 @@ fn bench_xrp(c: &mut Criterion) {
         b.iter(|| eddsa.sign(black_box(msg)).unwrap())
     });
     c.bench_function("xrp_eddsa_verify", |b| {
-        b.iter(|| eddsa_v.verify(black_box(msg), black_box(&eddsa_sig)).unwrap())
+        b.iter(|| {
+            eddsa_v
+                .verify(black_box(msg), black_box(&eddsa_sig))
+                .unwrap()
+        })
     });
 }
 
@@ -220,9 +226,7 @@ fn bench_neo(c: &mut Criterion) {
     let msg = b"benchmark message for neo p256";
     let sig = signer.sign(msg).unwrap();
 
-    c.bench_function("neo_keygen", |b| {
-        b.iter(|| NeoSigner::generate().unwrap())
-    });
+    c.bench_function("neo_keygen", |b| b.iter(|| NeoSigner::generate().unwrap()));
     c.bench_function("neo_sign", |b| {
         b.iter(|| signer.sign(black_box(msg)).unwrap())
     });
@@ -232,19 +236,23 @@ fn bench_neo(c: &mut Criterion) {
 }
 
 fn bench_hd_key(c: &mut Criterion) {
-    use trad_signer::hd_key::{ExtendedPrivateKey, DerivationPath};
+    use trad_signer::hd_key::{DerivationPath, ExtendedPrivateKey};
 
     let seed = [0x42u8; 64];
     let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
 
     c.bench_function("hd_derive_eth_m44_60_0_0_0", |b| {
         b.iter(|| {
-            master.derive_path(black_box(&DerivationPath::ethereum(0))).unwrap()
+            master
+                .derive_path(black_box(&DerivationPath::ethereum(0)))
+                .unwrap()
         })
     });
     c.bench_function("hd_derive_btc_m84_0_0_0_0", |b| {
         b.iter(|| {
-            master.derive_path(black_box(&DerivationPath::bitcoin_segwit(0))).unwrap()
+            master
+                .derive_path(black_box(&DerivationPath::bitcoin_segwit(0)))
+                .unwrap()
         })
     });
 }
@@ -316,7 +324,10 @@ fn bench_sighash(c: &mut Criterion) {
     let mut tx = Transaction::new(2);
     for i in 0u8..2 {
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: [i; 32], vout: 0 },
+            previous_output: OutPoint {
+                txid: [i; 32],
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFF,
         });
@@ -324,9 +335,10 @@ fn bench_sighash(c: &mut Criterion) {
     for _ in 0..2 {
         tx.outputs.push(TxOut {
             value: 50_000,
-            script_pubkey: vec![0x00, 0x14,
-                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
-                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB],
+            script_pubkey: vec![
+                0x00, 0x14, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+            ],
         });
     }
 
@@ -337,26 +349,31 @@ fn bench_sighash(c: &mut Criterion) {
 
     c.bench_function("sighash_segwit_v0", |b| {
         b.iter(|| {
-            sighash::segwit_v0_sighash(
-                black_box(&tx), 0, black_box(&prev_out), SighashType::All
-            ).unwrap()
+            sighash::segwit_v0_sighash(black_box(&tx), 0, black_box(&prev_out), SighashType::All)
+                .unwrap()
         })
     });
 
-    let prevouts: Vec<TxOut> = (0..2).map(|_| TxOut {
-        value: 100_000,
-        script_pubkey: {
-            let mut spk = vec![0x51, 0x20];
-            spk.extend_from_slice(&[0xCC; 32]);
-            spk
-        },
-    }).collect();
+    let prevouts: Vec<TxOut> = (0..2)
+        .map(|_| TxOut {
+            value: 100_000,
+            script_pubkey: {
+                let mut spk = vec![0x51, 0x20];
+                spk.extend_from_slice(&[0xCC; 32]);
+                spk
+            },
+        })
+        .collect();
 
     c.bench_function("sighash_taproot_key_path", |b| {
         b.iter(|| {
             sighash::taproot_key_path_sighash(
-                black_box(&tx), 0, black_box(&prevouts), SighashType::Default
-            ).unwrap()
+                black_box(&tx),
+                0,
+                black_box(&prevouts),
+                SighashType::Default,
+            )
+            .unwrap()
         })
     });
 
@@ -364,9 +381,14 @@ fn bench_sighash(c: &mut Criterion) {
     c.bench_function("sighash_taproot_script_path", |b| {
         b.iter(|| {
             sighash::taproot_script_path_sighash(
-                black_box(&tx), 0, black_box(&prevouts), SighashType::Default,
-                black_box(&leaf_hash), 0xFFFFFFFF
-            ).unwrap()
+                black_box(&tx),
+                0,
+                black_box(&prevouts),
+                SighashType::Default,
+                black_box(&leaf_hash),
+                0xFFFFFFFF,
+            )
+            .unwrap()
         })
     });
 }
@@ -380,7 +402,10 @@ fn bench_transaction(c: &mut Criterion) {
     let mut tx = Transaction::new(2);
     for i in 0u8..2 {
         tx.inputs.push(TxIn {
-            previous_output: OutPoint { txid: [i; 32], vout: 0 },
+            previous_output: OutPoint {
+                txid: [i; 32],
+                vout: 0,
+            },
             script_sig: vec![],
             sequence: 0xFFFFFFFF,
         });
@@ -388,9 +413,10 @@ fn bench_transaction(c: &mut Criterion) {
     for _ in 0..2 {
         tx.outputs.push(TxOut {
             value: 50_000,
-            script_pubkey: vec![0x00, 0x14,
-                0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
-                0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
+            script_pubkey: vec![
+                0x00, 0x14, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+                0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+            ],
         });
     }
     tx.witnesses.push(vec![vec![0x30; 72], vec![0x02; 33]]);
@@ -402,12 +428,8 @@ fn bench_transaction(c: &mut Criterion) {
     c.bench_function("tx_serialize_witness", |b| {
         b.iter(|| black_box(tx.serialize_witness()))
     });
-    c.bench_function("tx_txid", |b| {
-        b.iter(|| black_box(tx.txid()))
-    });
-    c.bench_function("tx_vsize", |b| {
-        b.iter(|| black_box(tx.vsize()))
-    });
+    c.bench_function("tx_txid", |b| b.iter(|| black_box(tx.txid())));
+    c.bench_function("tx_vsize", |b| b.iter(|| black_box(tx.vsize())));
 
     let raw = tx.serialize_legacy();
     c.bench_function("tx_parse_unsigned", |b| {
@@ -432,9 +454,7 @@ fn bench_xpub(c: &mut Criterion) {
         b.iter(|| black_box(xpub.to_xpub()))
     });
     c.bench_function("xpub_from_xpub_string", |b| {
-        b.iter(|| {
-            trad_signer::hd_key::ExtendedPublicKey::from_xpub(black_box(&xpub_str)).unwrap()
-        })
+        b.iter(|| trad_signer::hd_key::ExtendedPublicKey::from_xpub(black_box(&xpub_str)).unwrap())
     });
     c.bench_function("xpub_p2wpkh_address", |b| {
         b.iter(|| xpub.p2wpkh_address(black_box("bc")).unwrap())

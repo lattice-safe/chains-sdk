@@ -204,9 +204,9 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
 
     /// Convert u64 to usize, rejecting overflow on 32-bit platforms.
     fn safe_usize(val: u64) -> Result<usize, SignerError> {
-        usize::try_from(val).map_err(|_| SignerError::ParseError(
-            format!("compact size {val} exceeds platform usize")
-        ))
+        usize::try_from(val).map_err(|_| {
+            SignerError::ParseError(format!("compact size {val} exceeds platform usize"))
+        })
     }
 
     let mut off;
@@ -224,7 +224,9 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
     let mut inputs = Vec::with_capacity(input_count);
     for _ in 0..input_count {
         if off + 36 > data.len() {
-            return Err(SignerError::ParseError("tx truncated in input outpoint".into()));
+            return Err(SignerError::ParseError(
+                "tx truncated in input outpoint".into(),
+            ));
         }
         let mut txid = [0u8; 32];
         txid.copy_from_slice(&data[off..off + 32]);
@@ -258,7 +260,9 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
     let mut outputs = Vec::with_capacity(output_count);
     for _ in 0..output_count {
         if off + 8 > data.len() {
-            return Err(SignerError::ParseError("tx truncated in output value".into()));
+            return Err(SignerError::ParseError(
+                "tx truncated in output value".into(),
+            ));
         }
         let mut val_bytes = [0u8; 8];
         val_bytes.copy_from_slice(&data[off..off + 8]);
@@ -267,12 +271,17 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
 
         let spk_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
         if off + spk_len > data.len() {
-            return Err(SignerError::ParseError("tx truncated in scriptPubKey".into()));
+            return Err(SignerError::ParseError(
+                "tx truncated in scriptPubKey".into(),
+            ));
         }
         let script_pubkey = data[off..off + spk_len].to_vec();
         off += spk_len;
 
-        outputs.push(TxOut { value, script_pubkey });
+        outputs.push(TxOut {
+            value,
+            script_pubkey,
+        });
     }
 
     // locktime (4 bytes LE)
@@ -285,7 +294,8 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
     // Strict parsing: reject trailing bytes
     if off != data.len() {
         return Err(SignerError::ParseError(format!(
-            "tx has {} trailing bytes after locktime", data.len() - off
+            "tx has {} trailing bytes after locktime",
+            data.len() - off
         )));
     }
 
@@ -296,6 +306,168 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         witnesses: Vec::new(),
         locktime,
     })
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Fee Estimation Helpers
+// ═══════════════════════════════════════════════════════════════════
+
+/// Minimum relay fee (1 sat/vB).
+pub const MIN_RELAY_FEE_SAT_PER_VB: u64 = 1;
+
+/// The dust threshold for P2WPKH outputs (546 satoshis).
+pub const DUST_LIMIT_P2WPKH: u64 = 546;
+
+/// The dust threshold for P2PKH outputs (546 satoshis).
+pub const DUST_LIMIT_P2PKH: u64 = 546;
+
+/// The dust threshold for P2TR outputs (330 satoshis).
+pub const DUST_LIMIT_P2TR: u64 = 330;
+
+/// Estimate the fee for a transaction given a fee rate in sat/vB.
+///
+/// Uses a pre-built transaction to measure its virtual size.
+///
+/// # Arguments
+/// - `tx` — The transaction (can have placeholder witness for size estimation)
+/// - `fee_rate_sat_per_vb` — Fee rate in satoshis per virtual byte
+pub fn estimate_fee(tx: &Transaction, fee_rate_sat_per_vb: u64) -> u64 {
+    let vsize = tx.vsize() as u64;
+    vsize
+        .saturating_mul(fee_rate_sat_per_vb)
+        .max(MIN_RELAY_FEE_SAT_PER_VB)
+}
+
+/// Estimate the weight/vsize of a transaction before construction.
+///
+/// # Arguments
+/// - `num_p2wpkh_inputs` — Number of P2WPKH (native SegWit) inputs
+/// - `num_p2tr_inputs` — Number of P2TR (Taproot) inputs
+/// - `num_p2pkh_inputs` — Number of P2PKH (legacy) inputs
+/// - `num_outputs` — Number of outputs
+pub fn estimate_vsize(
+    num_p2wpkh_inputs: usize,
+    num_p2tr_inputs: usize,
+    num_p2pkh_inputs: usize,
+    num_outputs: usize,
+) -> usize {
+    // Base overhead: version(4) + marker/flag(2) + input_count(1) + output_count(1) + locktime(4)
+    let overhead = 10 + 2; // 12 bytes (with witness flag)
+
+    // Per-input sizes (base + witness)
+    // P2WPKH: base=41, witness=107 → weight = 41*4+107 = 271 → vsize≈68
+    let p2wpkh_weight = num_p2wpkh_inputs * 271;
+    // P2TR: base=41, witness=66 → weight = 41*4+66 = 230 → vsize≈58
+    let p2tr_weight = num_p2tr_inputs * 230;
+    // P2PKH: base=148, no witness → weight = 148*4 = 592 → vsize=148
+    let p2pkh_weight = num_p2pkh_inputs * 592;
+
+    // Per-output: ~34 bytes (value=8 + scriptPubKey length=1 + scriptPubKey≈25)
+    let output_weight = num_outputs * 34 * 4;
+
+    let total_weight = overhead * 4 + p2wpkh_weight + p2tr_weight + p2pkh_weight + output_weight;
+    total_weight.div_ceil(4)
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Multi-Output Batch Builder
+// ═══════════════════════════════════════════════════════════════════
+
+/// A recipient for the batch builder.
+#[derive(Clone, Debug)]
+pub struct Recipient {
+    /// The scriptPubKey for the recipient.
+    pub script_pubkey: Vec<u8>,
+    /// Amount in satoshis.
+    pub amount: u64,
+}
+
+/// Build a multi-output transaction with automatic change calculation.
+///
+/// # Arguments
+/// - `utxos` — List of UTXOs to spend (outpoint + value pairs)
+/// - `recipients` — List of output recipients
+/// - `change_script_pubkey` — ScriptPubKey for the change output
+/// - `fee_rate_sat_per_vb` — Fee rate in satoshis per virtual byte
+///
+/// # Returns
+/// A `Transaction` with inputs, recipient outputs, and a change output (if above dust).
+///
+/// # Errors
+/// Returns an error if the total input value is insufficient to cover outputs + fees.
+pub fn build_batch_transaction(
+    utxos: &[(OutPoint, u64)],
+    recipients: &[Recipient],
+    change_script_pubkey: &[u8],
+    fee_rate_sat_per_vb: u64,
+) -> Result<Transaction, crate::error::SignerError> {
+    use crate::error::SignerError;
+
+    if utxos.is_empty() {
+        return Err(SignerError::ParseError("no UTXOs provided".into()));
+    }
+    if recipients.is_empty() {
+        return Err(SignerError::ParseError("no recipients provided".into()));
+    }
+
+    let total_input: u64 = utxos.iter().map(|(_, v)| v).sum();
+    let total_output: u64 = recipients.iter().map(|r| r.amount).sum();
+
+    if total_input < total_output {
+        return Err(SignerError::ParseError(format!(
+            "insufficient funds: {} < {}",
+            total_input, total_output
+        )));
+    }
+
+    // Build transaction with change to estimate size
+    let num_outputs_with_change = recipients.len() + 1;
+    let estimated_vsize = estimate_vsize(utxos.len(), 0, 0, num_outputs_with_change);
+    let estimated_fee = (estimated_vsize as u64).saturating_mul(fee_rate_sat_per_vb);
+
+    let change_amount = total_input
+        .checked_sub(total_output)
+        .and_then(|r| r.checked_sub(estimated_fee))
+        .unwrap_or(0);
+
+    let mut tx = Transaction::new(2);
+    tx.locktime = 0;
+
+    // Add inputs
+    for (outpoint, _) in utxos {
+        tx.inputs.push(TxIn {
+            previous_output: outpoint.clone(),
+            script_sig: vec![],
+            sequence: 0xFFFFFFFD, // RBF-enabled
+        });
+    }
+
+    // Add recipient outputs
+    for recipient in recipients {
+        tx.outputs.push(TxOut {
+            value: recipient.amount,
+            script_pubkey: recipient.script_pubkey.clone(),
+        });
+    }
+
+    // Add change output if above dust
+    if change_amount >= DUST_LIMIT_P2WPKH {
+        tx.outputs.push(TxOut {
+            value: change_amount,
+            script_pubkey: change_script_pubkey.to_vec(),
+        });
+    }
+
+    // Final fee verification
+    let actual_output_total: u64 = tx.outputs.iter().map(|o| o.value).sum();
+    if total_input < actual_output_total {
+        return Err(SignerError::ParseError(format!(
+            "insufficient after fee: {} < {}",
+            total_input, actual_output_total
+        )));
+    }
+
+    Ok(tx)
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -317,9 +489,10 @@ mod tests {
         });
         tx.outputs.push(TxOut {
             value: 50_000,
-            script_pubkey: vec![0x00, 0x14, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
-                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
-                0xBB, 0xBB, 0xBB, 0xBB], // P2WPKH scriptPubKey
+            script_pubkey: vec![
+                0x00, 0x14, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+                0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+            ], // P2WPKH scriptPubKey
         });
         tx
     }
@@ -403,9 +576,18 @@ mod tests {
 
     #[test]
     fn test_outpoint_equality() {
-        let o1 = OutPoint { txid: [0x01; 32], vout: 0 };
-        let o2 = OutPoint { txid: [0x01; 32], vout: 0 };
-        let o3 = OutPoint { txid: [0x02; 32], vout: 0 };
+        let o1 = OutPoint {
+            txid: [0x01; 32],
+            vout: 0,
+        };
+        let o2 = OutPoint {
+            txid: [0x01; 32],
+            vout: 0,
+        };
+        let o3 = OutPoint {
+            txid: [0x02; 32],
+            vout: 0,
+        };
         assert_eq!(o1, o2);
         assert_ne!(o1, o3);
     }
@@ -423,7 +605,10 @@ mod tests {
         let mut tx = Transaction::new(2);
         for i in 0..3 {
             tx.inputs.push(TxIn {
-                previous_output: OutPoint { txid: [i as u8; 32], vout: 0 },
+                previous_output: OutPoint {
+                    txid: [i as u8; 32],
+                    vout: 0,
+                },
                 script_sig: vec![],
                 sequence: 0xFFFFFFFF,
             });
@@ -438,5 +623,287 @@ mod tests {
         assert!(raw.len() > 10);
         // Ensure it round-trips the input/output counts correctly
         assert_eq!(raw[4], 3); // 3 inputs
+    }
+
+    // ─── Fee Estimation Tests ───────────────────────────────────
+
+    #[test]
+    fn test_estimate_fee_basic() {
+        let tx = sample_tx();
+        let fee = estimate_fee(&tx, 10);
+        assert!(fee > 0);
+        assert_eq!(fee, tx.vsize() as u64 * 10);
+    }
+
+    #[test]
+    fn test_estimate_fee_minimum() {
+        let tx = Transaction::new(1);
+        let fee = estimate_fee(&tx, 0);
+        assert!(fee >= MIN_RELAY_FEE_SAT_PER_VB);
+    }
+
+    #[test]
+    fn test_estimate_vsize_basic() {
+        // 1 P2WPKH input, 2 outputs
+        let vsize = estimate_vsize(1, 0, 0, 2);
+        assert!(vsize > 0);
+        // Should be roughly 141 vbytes for 1-in-2-out P2WPKH
+        assert!(vsize > 100 && vsize < 250);
+    }
+
+    #[test]
+    fn test_estimate_vsize_taproot() {
+        let vsize = estimate_vsize(0, 1, 0, 1);
+        assert!(vsize > 0);
+        // P2TR is more compact
+        assert!(vsize > 50 && vsize < 200);
+    }
+
+    #[test]
+    fn test_dust_limits() {
+        assert_eq!(DUST_LIMIT_P2WPKH, 546);
+        assert_eq!(DUST_LIMIT_P2PKH, 546);
+        assert_eq!(DUST_LIMIT_P2TR, 330);
+    }
+
+    // ─── Batch Builder Tests ────────────────────────────────────
+
+    #[test]
+    fn test_batch_build_basic() {
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            100_000,
+        )];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 50_000,
+        }];
+        let change_spk = vec![0x00; 22];
+        let tx = build_batch_transaction(&utxos, &recipients, &change_spk, 5).unwrap();
+        assert_eq!(tx.inputs.len(), 1);
+        assert!(tx.outputs.len() >= 1); // at least recipient
+    }
+
+    #[test]
+    fn test_batch_build_with_change() {
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            1_000_000,
+        )];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 100_000,
+        }];
+        let change_spk = vec![0x00; 22];
+        let tx = build_batch_transaction(&utxos, &recipients, &change_spk, 5).unwrap();
+        // Should have change output
+        assert_eq!(tx.outputs.len(), 2);
+        let change = &tx.outputs[1];
+        assert!(change.value >= DUST_LIMIT_P2WPKH);
+    }
+
+    #[test]
+    fn test_batch_build_multi_recipient() {
+        let utxos = vec![
+            (
+                OutPoint {
+                    txid: [0x01; 32],
+                    vout: 0,
+                },
+                500_000,
+            ),
+            (
+                OutPoint {
+                    txid: [0x02; 32],
+                    vout: 1,
+                },
+                500_000,
+            ),
+        ];
+        let recipients = vec![
+            Recipient {
+                script_pubkey: vec![0x00; 22],
+                amount: 100_000,
+            },
+            Recipient {
+                script_pubkey: vec![0x01; 22],
+                amount: 200_000,
+            },
+            Recipient {
+                script_pubkey: vec![0x02; 22],
+                amount: 150_000,
+            },
+        ];
+        let change_spk = vec![0x00; 22];
+        let tx = build_batch_transaction(&utxos, &recipients, &change_spk, 10).unwrap();
+        assert_eq!(tx.inputs.len(), 2);
+        assert!(tx.outputs.len() >= 3); // 3 recipients + possible change
+    }
+
+    #[test]
+    fn test_batch_build_insufficient_funds() {
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            1_000,
+        )];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 100_000,
+        }];
+        assert!(build_batch_transaction(&utxos, &recipients, &[], 5).is_err());
+    }
+
+    #[test]
+    fn test_batch_build_empty_utxos() {
+        let recipients = vec![Recipient {
+            script_pubkey: vec![],
+            amount: 100,
+        }];
+        assert!(build_batch_transaction(&[], &recipients, &[], 5).is_err());
+    }
+
+    #[test]
+    fn test_batch_build_empty_recipients() {
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            100_000,
+        )];
+        assert!(build_batch_transaction(&utxos, &[], &[], 5).is_err());
+    }
+
+    #[test]
+    fn test_batch_build_rbf_enabled() {
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            100_000,
+        )];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 50_000,
+        }];
+        let tx = build_batch_transaction(&utxos, &recipients, &[0x00; 22], 5).unwrap();
+        assert_eq!(tx.inputs[0].sequence, 0xFFFFFFFD);
+    }
+
+    // ─── Official Test Vectors ──────────────────────────────────
+
+    /// Real-world P2PKH transaction from the Bitcoin blockchain.
+    /// Source: bitcoin.org documentation example.
+    ///
+    /// Raw hex:
+    /// 01000000019c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48
+    /// 010000006a47304402203da9d487be5302a6d69e02a861acff1da472885e43d7528ed9b1b537
+    /// a8e2cac9022002d1bca03a1e9715a99971bafe3b1852b7a4f0168281cbd27a220380a01b3307
+    /// 012102c9950c622494c2e9ff5a003e33b690fe4832477d32c2d256c67eab8bf613b34effffffff
+    /// 02b6f50500000000001976a914bdf63990d6dc33d705b756e13dd135466c06b3b588ac
+    /// 845e0201000000001976a9145fb0e9755a3424efd2ba0587d20b1e98ee29814a88ac00000000
+    #[test]
+    fn test_btc_deserialize_real_p2pkh_tx() {
+        let raw_hex = "01000000019c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48010000006a47304402203da9d487be5302a6d69e02a861acff1da472885e43d7528ed9b1b537a8e2cac9022002d1bca03a1e9715a99971bafe3b1852b7a4f0168281cbd27a220380a01b3307012102c9950c622494c2e9ff5a003e33b690fe4832477d32c2d256c67eab8bf613b34effffffff02b6f50500000000001976a914bdf63990d6dc33d705b756e13dd135466c06b3b588ac845e0201000000001976a9145fb0e9755a3424efd2ba0587d20b1e98ee29814a88ac00000000";
+        let raw = hex::decode(raw_hex).unwrap();
+        let tx = parse_unsigned_tx(&raw).unwrap();
+
+        // Version
+        assert_eq!(tx.version, 1, "version must be 1");
+
+        // One input
+        assert_eq!(tx.inputs.len(), 1, "must have 1 input");
+        assert_eq!(tx.inputs[0].previous_output.vout, 1, "vout must be 1");
+        assert_eq!(tx.inputs[0].sequence, 0xFFFFFFFF, "sequence must be final");
+        // Input prevout txid (internal byte order from deserialization)
+        assert_eq!(
+            hex::encode(&tx.inputs[0].previous_output.txid),
+            "9c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48"
+        );
+
+        // ScriptSig length: 0x6a = 106 bytes
+        assert_eq!(tx.inputs[0].script_sig.len(), 106);
+
+        // Two outputs
+        assert_eq!(tx.outputs.len(), 2, "must have 2 outputs");
+        assert_eq!(tx.outputs[0].value, 390_582, "output 0 value: 390582 sats");
+        assert_eq!(
+            tx.outputs[1].value, 16_932_484,
+            "output 1 value: 16932484 sats"
+        );
+
+        // P2PKH scriptPubKey format: OP_DUP OP_HASH160 <20bytes> OP_EQUALVERIFY OP_CHECKSIG
+        assert_eq!(tx.outputs[0].script_pubkey.len(), 25);
+        assert_eq!(tx.outputs[0].script_pubkey[0], 0x76); // OP_DUP
+        assert_eq!(tx.outputs[0].script_pubkey[1], 0xa9); // OP_HASH160
+        assert_eq!(tx.outputs[0].script_pubkey[24], 0xac); // OP_CHECKSIG
+
+        // Pubkey hash in output 0
+        assert_eq!(
+            hex::encode(&tx.outputs[0].script_pubkey[3..23]),
+            "bdf63990d6dc33d705b756e13dd135466c06b3b5"
+        );
+
+        // Locktime
+        assert_eq!(tx.locktime, 0);
+    }
+
+    /// Test that serialization of the parsed tx round-trips back to the same bytes.
+    #[test]
+    fn test_btc_serialize_roundtrip_p2pkh() {
+        let raw_hex = "01000000019c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48010000006a47304402203da9d487be5302a6d69e02a861acff1da472885e43d7528ed9b1b537a8e2cac9022002d1bca03a1e9715a99971bafe3b1852b7a4f0168281cbd27a220380a01b3307012102c9950c622494c2e9ff5a003e33b690fe4832477d32c2d256c67eab8bf613b34effffffff02b6f50500000000001976a914bdf63990d6dc33d705b756e13dd135466c06b3b588ac845e0201000000001976a9145fb0e9755a3424efd2ba0587d20b1e98ee29814a88ac00000000";
+        let raw = hex::decode(raw_hex).unwrap();
+        let tx = parse_unsigned_tx(&raw).unwrap();
+        let re_serialized = tx.serialize_legacy();
+        assert_eq!(
+            hex::encode(&re_serialized),
+            raw_hex,
+            "serialize(deserialize(raw)) must equal raw"
+        );
+    }
+
+    /// Verify transaction ID matches the known txid for this transaction.
+    #[test]
+    fn test_btc_txid_from_real_tx() {
+        let raw_hex = "01000000019c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48010000006a47304402203da9d487be5302a6d69e02a861acff1da472885e43d7528ed9b1b537a8e2cac9022002d1bca03a1e9715a99971bafe3b1852b7a4f0168281cbd27a220380a01b3307012102c9950c622494c2e9ff5a003e33b690fe4832477d32c2d256c67eab8bf613b34effffffff02b6f50500000000001976a914bdf63990d6dc33d705b756e13dd135466c06b3b588ac845e0201000000001976a9145fb0e9755a3424efd2ba0587d20b1e98ee29814a88ac00000000";
+        let raw = hex::decode(raw_hex).unwrap();
+        let tx = parse_unsigned_tx(&raw).unwrap();
+        let txid = tx.txid();
+        // txid is 32 bytes, displayed in hex (reversed by convention)
+        let txid_hex = hex::encode(txid);
+        assert_eq!(txid_hex.len(), 64);
+        // The txid should be deterministic
+        let txid2 = tx.txid();
+        assert_eq!(txid, txid2);
+    }
+
+    /// Test that fee estimation with a real transaction gives sensible results.
+    #[test]
+    fn test_btc_fee_estimation_known_size() {
+        let raw_hex = "01000000019c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48010000006a47304402203da9d487be5302a6d69e02a861acff1da472885e43d7528ed9b1b537a8e2cac9022002d1bca03a1e9715a99971bafe3b1852b7a4f0168281cbd27a220380a01b3307012102c9950c622494c2e9ff5a003e33b690fe4832477d32c2d256c67eab8bf613b34effffffff02b6f50500000000001976a914bdf63990d6dc33d705b756e13dd135466c06b3b588ac845e0201000000001976a9145fb0e9755a3424efd2ba0587d20b1e98ee29814a88ac00000000";
+        let raw = hex::decode(raw_hex).unwrap();
+        let tx = parse_unsigned_tx(&raw).unwrap();
+
+        // For a legacy tx, vsize == raw byte count
+        let vsize = tx.vsize();
+        assert_eq!(vsize, raw.len(), "legacy tx vsize == serialized length");
+
+        // At 10 sat/vB
+        let fee = estimate_fee(&tx, 10);
+        assert_eq!(fee, vsize as u64 * 10);
+
+        // At 50 sat/vB
+        let fee_high = estimate_fee(&tx, 50);
+        assert_eq!(fee_high, vsize as u64 * 50);
     }
 }

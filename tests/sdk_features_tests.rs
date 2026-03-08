@@ -56,7 +56,10 @@ mod eip155 {
         let sig5 = signer.sign_with_chain_id(b"test", 5).unwrap();
         // Same message, same key, but different chain IDs → different v values
         // (r and s are the same because the underlying signing is deterministic on the same message)
-        assert_ne!(sig1.v, sig5.v, "different chain IDs should produce different v");
+        assert_ne!(
+            sig1.v, sig5.v,
+            "different chain IDs should produce different v"
+        );
     }
 }
 
@@ -69,7 +72,11 @@ mod xpub_xprv {
         let seed = [0xABu8; 64];
         let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
         let xprv = master.to_xprv();
-        assert!(xprv.starts_with("xprv"), "xprv should start with 'xprv': {}", &*xprv);
+        assert!(
+            xprv.starts_with("xprv"),
+            "xprv should start with 'xprv': {}",
+            &*xprv
+        );
     }
 
     #[test]
@@ -77,7 +84,10 @@ mod xpub_xprv {
         let seed = [0xABu8; 64];
         let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
         let xpub = master.to_xpub().unwrap();
-        assert!(xpub.starts_with("xpub"), "xpub should start with 'xpub': {xpub}");
+        assert!(
+            xpub.starts_with("xpub"),
+            "xpub should start with 'xpub': {xpub}"
+        );
     }
 
     #[test]
@@ -86,7 +96,10 @@ mod xpub_xprv {
         let master = ExtendedPrivateKey::from_seed(&seed).unwrap();
         let xprv_str = master.to_xprv();
         let restored = ExtendedPrivateKey::from_xprv(&xprv_str).unwrap();
-        assert_eq!(master.private_key_bytes().as_slice(), restored.private_key_bytes().as_slice());
+        assert_eq!(
+            master.private_key_bytes().as_slice(),
+            restored.private_key_bytes().as_slice()
+        );
         assert_eq!(master.chain_code(), restored.chain_code());
         assert_eq!(master.depth(), restored.depth());
     }
@@ -119,14 +132,21 @@ mod xpub_xprv {
         let master = ExtendedPrivateKey::from_seed(&[0x55u8; 64]).unwrap();
         let xpub = master.to_xpub().unwrap();
         // xpub is ~111 chars Base58
-        assert!(xpub.len() > 100 && xpub.len() < 120, "unexpected xpub length: {}", xpub.len());
+        assert!(
+            xpub.len() > 100 && xpub.len() < 120,
+            "unexpected xpub length: {}",
+            xpub.len()
+        );
     }
 }
 
 #[cfg(feature = "bitcoin")]
 mod btc_message_signing {
-    use trad_signer::bitcoin::{BitcoinSigner, bitcoin_message_hash, validate_address, validate_mainnet_address, validate_testnet_address};
     use trad_signer::bitcoin::schnorr::SchnorrSigner;
+    use trad_signer::bitcoin::{
+        bitcoin_message_hash, validate_address, validate_mainnet_address, validate_testnet_address,
+        BitcoinSigner,
+    };
     use trad_signer::traits::{KeyPair, Signer, Verifier};
 
     #[test]
@@ -150,7 +170,10 @@ mod btc_message_signing {
         // Should be a valid DER signature
         assert!(!sig.to_bytes().is_empty());
         // Verify: manually hash and verify
-        let verifier = trad_signer::bitcoin::BitcoinVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = trad_signer::bitcoin::BitcoinVerifier::from_public_key_bytes(
+            &signer.public_key_bytes(),
+        )
+        .unwrap();
         let digest = bitcoin_message_hash(b"test message");
         assert!(verifier.verify_prehashed(&digest, &sig).is_ok());
     }
@@ -159,7 +182,10 @@ mod btc_message_signing {
     fn test_sign_message_wrong_msg_fails_verify() {
         let signer = BitcoinSigner::generate().unwrap();
         let sig = signer.sign_message(b"message A").unwrap();
-        let verifier = trad_signer::bitcoin::BitcoinVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let verifier = trad_signer::bitcoin::BitcoinVerifier::from_public_key_bytes(
+            &signer.public_key_bytes(),
+        )
+        .unwrap();
         // Verify with wrong message digest — should fail verification
         let wrong_digest = bitcoin_message_hash(b"message B");
         let result = verifier.verify_prehashed(&wrong_digest, &sig);
@@ -175,36 +201,54 @@ mod btc_message_signing {
     fn test_validate_p2pkh_address() {
         let signer = BitcoinSigner::generate().unwrap();
         let addr = signer.p2pkh_address();
-        assert!(validate_mainnet_address(&addr), "P2PKH should be valid: {addr}");
+        assert!(
+            validate_mainnet_address(&addr),
+            "P2PKH should be valid: {addr}"
+        );
     }
 
     #[test]
     fn test_validate_p2wpkh_address() {
         let signer = BitcoinSigner::generate().unwrap();
         let addr = signer.p2wpkh_address().unwrap();
-        assert!(validate_mainnet_address(&addr), "P2WPKH should be valid: {addr}");
+        assert!(
+            validate_mainnet_address(&addr),
+            "P2WPKH should be valid: {addr}"
+        );
     }
 
     #[test]
     fn test_validate_p2tr_address() {
         let signer = SchnorrSigner::generate().unwrap();
         let addr = signer.p2tr_address().unwrap();
-        assert!(validate_mainnet_address(&addr), "P2TR should be valid: {addr}");
+        assert!(
+            validate_mainnet_address(&addr),
+            "P2TR should be valid: {addr}"
+        );
     }
 
     #[test]
     fn test_validate_testnet_address_p2pkh() {
         let signer = BitcoinSigner::generate().unwrap();
         let addr = signer.p2pkh_testnet_address();
-        assert!(validate_testnet_address(&addr), "testnet P2PKH should be valid: {addr}");
-        assert!(addr.starts_with('m') || addr.starts_with('n'), "got: {addr}");
+        assert!(
+            validate_testnet_address(&addr),
+            "testnet P2PKH should be valid: {addr}"
+        );
+        assert!(
+            addr.starts_with('m') || addr.starts_with('n'),
+            "got: {addr}"
+        );
     }
 
     #[test]
     fn test_validate_testnet_address_p2wpkh() {
         let signer = BitcoinSigner::generate().unwrap();
         let addr = signer.p2wpkh_testnet_address().unwrap();
-        assert!(validate_testnet_address(&addr), "testnet P2WPKH should be valid: {addr}");
+        assert!(
+            validate_testnet_address(&addr),
+            "testnet P2WPKH should be valid: {addr}"
+        );
         assert!(addr.starts_with("tb1q"), "got: {addr}");
     }
 
@@ -212,7 +256,10 @@ mod btc_message_signing {
     fn test_validate_testnet_p2tr() {
         let signer = SchnorrSigner::generate().unwrap();
         let addr = signer.p2tr_testnet_address().unwrap();
-        assert!(validate_testnet_address(&addr), "testnet P2TR should be valid: {addr}");
+        assert!(
+            validate_testnet_address(&addr),
+            "testnet P2TR should be valid: {addr}"
+        );
         assert!(addr.starts_with("tb1p"), "got: {addr}");
     }
 
@@ -227,14 +274,19 @@ mod btc_message_signing {
     #[test]
     fn test_validate_known_mainnet_address() {
         // Known valid P2PKH from privkey=1
-        assert!(validate_mainnet_address("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"));
+        assert!(validate_mainnet_address(
+            "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"
+        ));
     }
 
     #[test]
     fn test_validate_rejects_testnet_as_mainnet() {
         let signer = BitcoinSigner::generate().unwrap();
         let testnet = signer.p2pkh_testnet_address();
-        assert!(!validate_mainnet_address(&testnet), "testnet should not validate as mainnet");
+        assert!(
+            !validate_mainnet_address(&testnet),
+            "testnet should not validate as mainnet"
+        );
     }
 
     #[test]
@@ -250,8 +302,8 @@ mod btc_message_signing {
 
 #[cfg(feature = "mnemonic")]
 mod mnemonic_integration {
+    use trad_signer::hd_key::{DerivationPath, ExtendedPrivateKey};
     use trad_signer::mnemonic::Mnemonic;
-    use trad_signer::hd_key::{ExtendedPrivateKey, DerivationPath};
 
     #[test]
     fn test_mnemonic_to_btc_address() {
@@ -280,7 +332,10 @@ mod mnemonic_integration {
         assert!(xprv.starts_with("xprv"));
         // Round-trip
         let restored = ExtendedPrivateKey::from_xprv(&xprv).unwrap();
-        assert_eq!(master.private_key_bytes().as_slice(), restored.private_key_bytes().as_slice());
+        assert_eq!(
+            master.private_key_bytes().as_slice(),
+            restored.private_key_bytes().as_slice()
+        );
     }
 
     #[test]
@@ -317,14 +372,22 @@ mod wif_tests {
     fn test_wif_starts_with_k_or_l() {
         let signer = BitcoinSigner::generate().unwrap();
         let wif = signer.to_wif();
-        assert!(wif.starts_with('K') || wif.starts_with('L'), "WIF should start with K or L: {}", &*wif);
+        assert!(
+            wif.starts_with('K') || wif.starts_with('L'),
+            "WIF should start with K or L: {}",
+            &*wif
+        );
     }
 
     #[test]
     fn test_wif_testnet_starts_with_c() {
         let signer = BitcoinSigner::generate().unwrap();
         let wif = signer.to_wif_testnet();
-        assert!(wif.starts_with('c'), "testnet WIF should start with 'c': {}", &*wif);
+        assert!(
+            wif.starts_with('c'),
+            "testnet WIF should start with 'c': {}",
+            &*wif
+        );
     }
 
     #[test]
@@ -355,7 +418,7 @@ mod wif_tests {
 
 #[cfg(feature = "hd_key")]
 mod fingerprint_tests {
-    use trad_signer::hd_key::{ExtendedPrivateKey, DerivationPath};
+    use trad_signer::hd_key::{DerivationPath, ExtendedPrivateKey};
 
     #[test]
     fn test_master_key_has_zero_fingerprint() {

@@ -325,8 +325,7 @@ mod tests {
 
     #[test]
     fn test_script_builder_opcode() {
-        let script = Script::new()
-            .push_opcode(Opcode::OP_CHECKSIG);
+        let script = Script::new().push_opcode(Opcode::OP_CHECKSIG);
         assert_eq!(script.to_bytes(), &[0xac]);
     }
 
@@ -388,7 +387,7 @@ mod tests {
         assert!(!bytes.is_empty());
         // First key push: 32 bytes + OP_CHECKSIG
         assert_eq!(bytes[0], 32); // push 32
-        // Should end with 2 OP_NUMEQUALVERIFY (push 2 + 0x9d)
+                                  // Should end with 2 OP_NUMEQUALVERIFY (push 2 + 0x9d)
         let last = bytes[bytes.len() - 1];
         assert_eq!(last, 0x9d); // OP_NUMEQUALVERIFY
     }
@@ -425,7 +424,10 @@ mod tests {
     fn test_sighash_type_parsing() {
         assert_eq!(SighashType::from_byte(0x00), Some(SighashType::Default));
         assert_eq!(SighashType::from_byte(0x01), Some(SighashType::All));
-        assert_eq!(SighashType::from_byte(0x81), Some(SighashType::AllAnyoneCanPay));
+        assert_eq!(
+            SighashType::from_byte(0x81),
+            Some(SighashType::AllAnyoneCanPay)
+        );
         assert_eq!(SighashType::from_byte(0xFF), None);
     }
 

@@ -7,20 +7,19 @@
 //!   for repeated signing sessions with the same key set.
 
 use crate::error::SignerError;
+use core::fmt;
 use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, ProjectivePoint, Scalar};
 
-use super::signing::{
-    KeyAggContext, PartialSignature,
-};
+use super::signing::{KeyAggContext, PartialSignature};
 
 // ═══════════════════════════════════════════════════════════════════
 // Adaptor Signatures
 // ═══════════════════════════════════════════════════════════════════
 
 /// An adaptor (pre-)signature that can be completed with the adaptor secret.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AdaptorSignature {
     /// The adaptor point `T` (compressed, 33 bytes).
     pub adaptor_point: [u8; 33],
@@ -28,6 +27,16 @@ pub struct AdaptorSignature {
     pub adapted_r: [u8; 32],
     /// The partial adaptor signature scalar `s'`.
     pub s_adaptor: Scalar,
+}
+
+impl fmt::Debug for AdaptorSignature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AdaptorSignature")
+            .field("adaptor_point", &hex::encode(self.adaptor_point))
+            .field("adapted_r", &hex::encode(self.adapted_r))
+            .field("s_adaptor", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl AdaptorSignature {
@@ -74,7 +83,9 @@ pub fn create_adaptor_signature(
     let t_affine = {
         let ct = AffinePoint::from_bytes(adaptor_point.into());
         if !bool::from(ct.is_some()) {
-            return Err(SignerError::InvalidPublicKey("invalid adaptor point".into()));
+            return Err(SignerError::InvalidPublicKey(
+                "invalid adaptor point".into(),
+            ));
         }
         #[allow(clippy::unwrap_used)]
         ct.unwrap()
@@ -87,7 +98,9 @@ pub fn create_adaptor_signature(
         r_bytes[1..].copy_from_slice(agg_nonce_r_x);
         let ct = AffinePoint::from_bytes((&r_bytes).into());
         if !bool::from(ct.is_some()) {
-            return Err(SignerError::InvalidPublicKey("invalid nonce R point".into()));
+            return Err(SignerError::InvalidPublicKey(
+                "invalid nonce R point".into(),
+            ));
         }
         #[allow(clippy::unwrap_used)]
         ct.unwrap()
@@ -117,12 +130,21 @@ pub fn create_adaptor_signature(
 ///
 /// Pre-computes the expensive key aggregation coefficients and aggregate key
 /// so they can be reused across multiple signing sessions.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CachedKeyAgg {
     /// The underlying key aggregation context.
     pub context: KeyAggContext,
     /// Cache of the individual public keys.
     pub pubkeys: Vec<[u8; 33]>,
+}
+
+impl fmt::Debug for CachedKeyAgg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CachedKeyAgg")
+            .field("num_keys", &self.pubkeys.len())
+            .field("aggregate_key", &hex::encode(self.context.x_only_pubkey))
+            .finish()
+    }
 }
 
 impl CachedKeyAgg {
@@ -164,8 +186,8 @@ impl CachedKeyAgg {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::*;
     use super::super::signing;
+    use super::*;
     use k256::elliptic_curve::ops::Reduce;
 
     #[test]
@@ -232,7 +254,9 @@ mod tests {
         let adaptor_affine = adaptor_point_proj.to_affine();
         let adaptor_bytes: [u8; 33] = adaptor_affine.to_bytes().into();
 
-        let partial = PartialSignature { s: Scalar::from(50u64) };
+        let partial = PartialSignature {
+            s: Scalar::from(50u64),
+        };
         let r = ProjectivePoint::GENERATOR * Scalar::from(3u64);
         let r_affine = r.to_affine();
         let r_encoded = r_affine.to_encoded_point(false);

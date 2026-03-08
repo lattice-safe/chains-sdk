@@ -12,8 +12,8 @@
 //!    Lagrange interpolation to produce a valid BLS signature.
 //! 4. **Verification**: Standard BLS verification against the group public key.
 
+use super::{BlsPublicKey, BlsSignature, ETH2_DST};
 use crate::error::SignerError;
-use super::{BlsSignature, BlsPublicKey, ETH2_DST};
 
 use blst::min_pk::{AggregateSignature, SecretKey, Signature};
 use zeroize::Zeroizing;
@@ -110,10 +110,7 @@ impl BlsThresholdKeyGen {
 ///
 /// # Returns
 /// Key shares for each participant and the group public key.
-pub fn threshold_keygen(
-    threshold: u16,
-    total: u16,
-) -> Result<BlsThresholdKeyGen, SignerError> {
+pub fn threshold_keygen(threshold: u16, total: u16) -> Result<BlsThresholdKeyGen, SignerError> {
     if threshold < 2 || total < threshold {
         return Err(SignerError::ParseError(
             "threshold must be >= 2 and <= total".into(),
@@ -123,8 +120,7 @@ pub fn threshold_keygen(
     // Generate a master seed for deterministic share derivation.
     // Each share is derived as: share_i = key_gen(SHA-256(master_seed || i))
     let mut master_seed = Zeroizing::new([0u8; 64]);
-    getrandom::getrandom(master_seed.as_mut_slice())
-        .map_err(|e| SignerError::SigningFailed(format!("RNG failed: {e}")))?;
+    crate::security::secure_random(master_seed.as_mut_slice())?;
 
     // Group key = key_gen(SHA-256(master_seed || 0x00))
     let group_ikm = derive_share_ikm(&master_seed, 0);
@@ -133,7 +129,9 @@ pub fn threshold_keygen(
     let group_pk_compressed = group_sk.sk_to_pk().compress();
     let mut group_pk_bytes = [0u8; 48];
     group_pk_bytes.copy_from_slice(&group_pk_compressed);
-    let group_pk = BlsPublicKey { bytes: group_pk_bytes };
+    let group_pk = BlsPublicKey {
+        bytes: group_pk_bytes,
+    };
 
     // Generate shares deterministically
     let mut key_shares = Vec::with_capacity(total as usize);
@@ -151,7 +149,9 @@ pub fn threshold_keygen(
         key_shares.push(BlsKeyShare {
             identifier: i,
             secret_key: Zeroizing::new(sk_bytes.to_vec()),
-            public_key: BlsPublicKey { bytes: share_pk_bytes },
+            public_key: BlsPublicKey {
+                bytes: share_pk_bytes,
+            },
         });
     }
 

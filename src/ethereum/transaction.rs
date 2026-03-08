@@ -29,9 +29,9 @@
 //! }
 //! ```
 
-use crate::error::SignerError;
 use super::rlp;
 use super::EthereumSigner;
+use crate::error::SignerError;
 use sha3::{Digest, Keccak256};
 
 // ─── Signed Transaction ────────────────────────────────────────────
@@ -531,14 +531,19 @@ pub fn decode_signed_tx(raw: &[u8]) -> Result<DecodedTransaction, SignerError> {
         0x03 => decode_type3_tx(raw, tx_hash),
         // Legacy: first byte >= 0xC0 (RLP list prefix)
         0xC0..=0xFF => decode_legacy_tx(raw, tx_hash),
-        b => Err(SignerError::ParseError(format!("unknown tx type byte: 0x{b:02x}"))),
+        b => Err(SignerError::ParseError(format!(
+            "unknown tx type byte: 0x{b:02x}"
+        ))),
     }
 }
 
 fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, SignerError> {
     let items = rlp::decode_list_items(raw)?;
     if items.len() != 9 {
-        return Err(SignerError::ParseError(format!("legacy tx: expected 9 RLP items, got {}", items.len())));
+        return Err(SignerError::ParseError(format!(
+            "legacy tx: expected 9 RLP items, got {}",
+            items.len()
+        )));
     }
 
     let nonce = items[0].as_u64()?;
@@ -549,7 +554,9 @@ fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction,
         let mut addr = [0u8; 20];
         addr.copy_from_slice(to_bytes);
         Some(addr)
-    } else { None };
+    } else {
+        None
+    };
     let value = items[4].as_bytes()?.to_vec();
     let data = items[5].as_bytes()?.to_vec();
     let v = items[6].as_u64()?;
@@ -588,14 +595,20 @@ fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction,
         gas_price_or_max_fee: gas_price,
         max_priority_fee: vec![],
         v,
-        r, s, from, tx_hash,
+        r,
+        s,
+        from,
+        tx_hash,
     })
 }
 
 fn decode_type1_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, SignerError> {
     let items = rlp::decode_list_items(&raw[1..])?;
     if items.len() != 11 {
-        return Err(SignerError::ParseError(format!("type1 tx: expected 11 items, got {}", items.len())));
+        return Err(SignerError::ParseError(format!(
+            "type1 tx: expected 11 items, got {}",
+            items.len()
+        )));
     }
 
     let chain_id = items[0].as_u64()?;
@@ -603,7 +616,13 @@ fn decode_type1_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let gas_price = items[2].as_bytes()?.to_vec();
     let gas_limit = items[3].as_u64()?;
     let to_bytes = items[4].as_bytes()?;
-    let to = if to_bytes.len() == 20 { let mut a=[0u8;20]; a.copy_from_slice(to_bytes); Some(a) } else { None };
+    let to = if to_bytes.len() == 20 {
+        let mut a = [0u8; 20];
+        a.copy_from_slice(to_bytes);
+        Some(a)
+    } else {
+        None
+    };
     let value = items[5].as_bytes()?.to_vec();
     let data = items[6].as_bytes()?.to_vec();
     // items[7] = access_list (skip for decode)
@@ -630,17 +649,29 @@ fn decode_type1_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
 
     Ok(DecodedTransaction {
         tx_type: TxType::Type1AccessList,
-        chain_id, nonce, to, value, data, gas_limit,
+        chain_id,
+        nonce,
+        to,
+        value,
+        data,
+        gas_limit,
         gas_price_or_max_fee: gas_price,
         max_priority_fee: vec![],
-        v: y_parity, r, s, from, tx_hash,
+        v: y_parity,
+        r,
+        s,
+        from,
+        tx_hash,
     })
 }
 
 fn decode_type2_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, SignerError> {
     let items = rlp::decode_list_items(&raw[1..])?;
     if items.len() != 12 {
-        return Err(SignerError::ParseError(format!("type2 tx: expected 12 items, got {}", items.len())));
+        return Err(SignerError::ParseError(format!(
+            "type2 tx: expected 12 items, got {}",
+            items.len()
+        )));
     }
 
     let chain_id = items[0].as_u64()?;
@@ -649,7 +680,13 @@ fn decode_type2_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let max_fee = items[3].as_bytes()?.to_vec();
     let gas_limit = items[4].as_u64()?;
     let to_bytes = items[5].as_bytes()?;
-    let to = if to_bytes.len() == 20 { let mut a=[0u8;20]; a.copy_from_slice(to_bytes); Some(a) } else { None };
+    let to = if to_bytes.len() == 20 {
+        let mut a = [0u8; 20];
+        a.copy_from_slice(to_bytes);
+        Some(a)
+    } else {
+        None
+    };
     let value = items[6].as_bytes()?.to_vec();
     let data = items[7].as_bytes()?.to_vec();
     // items[8] = access_list
@@ -676,17 +713,29 @@ fn decode_type2_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
 
     Ok(DecodedTransaction {
         tx_type: TxType::Type2DynamicFee,
-        chain_id, nonce, to, value, data, gas_limit,
+        chain_id,
+        nonce,
+        to,
+        value,
+        data,
+        gas_limit,
         gas_price_or_max_fee: max_fee,
         max_priority_fee,
-        v: y_parity, r, s, from, tx_hash,
+        v: y_parity,
+        r,
+        s,
+        from,
+        tx_hash,
     })
 }
 
 fn decode_type3_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, SignerError> {
     let items = rlp::decode_list_items(&raw[1..])?;
     if items.len() != 14 {
-        return Err(SignerError::ParseError(format!("type3 tx: expected 14 items, got {}", items.len())));
+        return Err(SignerError::ParseError(format!(
+            "type3 tx: expected 14 items, got {}",
+            items.len()
+        )));
     }
 
     let chain_id = items[0].as_u64()?;
@@ -695,7 +744,13 @@ fn decode_type3_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let max_fee = items[3].as_bytes()?.to_vec();
     let gas_limit = items[4].as_u64()?;
     let to_bytes = items[5].as_bytes()?;
-    let to = if to_bytes.len() == 20 { let mut a=[0u8;20]; a.copy_from_slice(to_bytes); Some(a) } else { None };
+    let to = if to_bytes.len() == 20 {
+        let mut a = [0u8; 20];
+        a.copy_from_slice(to_bytes);
+        Some(a)
+    } else {
+        None
+    };
     let value = items[6].as_bytes()?.to_vec();
     let data = items[7].as_bytes()?.to_vec();
     // items[8] = access_list, items[9] = max_fee_per_blob_gas, items[10] = blob_hashes
@@ -724,10 +779,19 @@ fn decode_type3_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
 
     Ok(DecodedTransaction {
         tx_type: TxType::Type3Blob,
-        chain_id, nonce, to, value, data, gas_limit,
+        chain_id,
+        nonce,
+        to,
+        value,
+        data,
+        gas_limit,
         gas_price_or_max_fee: max_fee,
         max_priority_fee,
-        v: y_parity, r, s, from, tx_hash,
+        v: y_parity,
+        r,
+        s,
+        from,
+        tx_hash,
     })
 }
 
@@ -746,7 +810,12 @@ fn re_encode_rlp_item(item: &rlp::RlpItem) -> Vec<u8> {
 }
 
 /// Recover the signer address from a message hash and ECDSA signature.
-fn recover_signer(hash: &[u8; 32], r: &[u8; 32], s: &[u8; 32], recovery_id: u8) -> Result<[u8; 20], SignerError> {
+fn recover_signer(
+    hash: &[u8; 32],
+    r: &[u8; 32],
+    s: &[u8; 32],
+    recovery_id: u8,
+) -> Result<[u8; 20], SignerError> {
     use k256::ecdsa::{RecoveryId, Signature as K256Signature, VerifyingKey};
 
     let mut sig_bytes = [0u8; 64];
@@ -846,9 +915,7 @@ mod tests {
             to: Some([0xAA; 20]),
             value: 1_000_000_000_000_000_000,
             data: vec![],
-            access_list: vec![
-                ([0xDD; 20], vec![[0xEE; 32]]),
-            ],
+            access_list: vec![([0xDD; 20], vec![[0xEE; 32]])],
         };
         let signed = tx.sign(&signer).unwrap();
         assert_eq!(signed.raw_tx()[0], 0x01, "Type 1 prefix");
@@ -947,7 +1014,10 @@ mod tests {
         let sig = vec![0xBB; 65];
         let calldata = encode_is_valid_signature(&hash, &sig);
         // First 4 bytes = function selector
-        assert_eq!(&calldata[..4], &keccak256(b"isValidSignature(bytes32,bytes)")[..4]);
+        assert_eq!(
+            &calldata[..4],
+            &keccak256(b"isValidSignature(bytes32,bytes)")[..4]
+        );
         // Next 32 bytes = hash
         assert_eq!(&calldata[4..36], &hash);
     }
@@ -1124,17 +1194,38 @@ mod tests {
         let expected_addr = signer.address();
 
         let legacy = LegacyTransaction {
-            nonce: 0, gas_price: 1, gas_limit: 21000,
-            to: Some([0xAA;20]), value: 0, data: vec![], chain_id: 1,
-        }.sign(&signer).unwrap();
+            nonce: 0,
+            gas_price: 1,
+            gas_limit: 21000,
+            to: Some([0xAA; 20]),
+            value: 0,
+            data: vec![],
+            chain_id: 1,
+        }
+        .sign(&signer)
+        .unwrap();
 
         let type2 = EIP1559Transaction {
-            chain_id: 1, nonce: 0, max_priority_fee_per_gas: 1,
-            max_fee_per_gas: 1, gas_limit: 21000,
-            to: Some([0xAA;20]), value: 0, data: vec![], access_list: vec![],
-        }.sign(&signer).unwrap();
+            chain_id: 1,
+            nonce: 0,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 1,
+            gas_limit: 21000,
+            to: Some([0xAA; 20]),
+            value: 0,
+            data: vec![],
+            access_list: vec![],
+        }
+        .sign(&signer)
+        .unwrap();
 
-        assert_eq!(decode_signed_tx(legacy.raw_tx()).unwrap().from, expected_addr);
-        assert_eq!(decode_signed_tx(type2.raw_tx()).unwrap().from, expected_addr);
+        assert_eq!(
+            decode_signed_tx(legacy.raw_tx()).unwrap().from,
+            expected_addr
+        );
+        assert_eq!(
+            decode_signed_tx(type2.raw_tx()).unwrap().from,
+            expected_addr
+        );
     }
 }

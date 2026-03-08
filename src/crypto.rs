@@ -94,7 +94,9 @@ mod tests {
     fn test_sha256_nist_448bit() {
         // NIST: SHA-256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
         assert_eq!(
-            hex::encode(sha256(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")),
+            hex::encode(sha256(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
     }
@@ -132,9 +134,9 @@ mod tests {
         // Bitcoin generator point compressed pubkey:
         // 02 79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
         // HASH160 → 751e76e8199196d454941c45d1b3a323f1433bd6
-        let generator_pubkey = hex::decode(
-            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-        ).unwrap();
+        let generator_pubkey =
+            hex::decode("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+                .unwrap();
         assert_eq!(
             hex::encode(hash160(&generator_pubkey)),
             "751e76e8199196d454941c45d1b3a323f1433bd6"
@@ -241,4 +243,3 @@ mod tests {
         assert_eq!(&h160_direct[..], &ripe[..]);
     }
 }
-

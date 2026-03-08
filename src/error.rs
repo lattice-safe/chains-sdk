@@ -86,7 +86,10 @@ mod tests {
 
     #[test]
     fn test_display_invalid_hash_length() {
-        let e = SignerError::InvalidHashLength { expected: 32, got: 20 };
+        let e = SignerError::InvalidHashLength {
+            expected: 32,
+            got: 20,
+        };
         let s = e.to_string();
         assert!(s.contains("32"));
         assert!(s.contains("20"));

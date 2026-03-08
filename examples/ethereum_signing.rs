@@ -3,17 +3,29 @@
 //! Demonstrates key generation, signing, verification,
 //! address derivation, and EIP-712 typed data signing.
 
-use trad_signer::ethereum::{EthereumSigner, EthereumVerifier, Eip712Domain, eip712_hash};
-use trad_signer::traits::{KeyPair, Signer, Verifier};
 use sha3::{Digest, Keccak256};
+use trad_signer::ethereum::{eip712_hash, Eip712Domain, EthereumSigner, EthereumVerifier};
+use trad_signer::traits::{KeyPair, Signer, Verifier};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ─── Key Generation ──────────────────────────────────────────────
     let signer = EthereumSigner::generate()?;
-    println!("Address:                0x{}", hex::encode(signer.address()));
-    println!("Compressed pubkey:      {} bytes", signer.public_key_bytes().len());
-    println!("Uncompressed pubkey:    {} bytes", signer.public_key_bytes_uncompressed().len());
-    println!("Private key:            {} bytes (zeroized on drop)", signer.private_key_bytes().len());
+    println!(
+        "Address:                0x{}",
+        hex::encode(signer.address())
+    );
+    println!(
+        "Compressed pubkey:      {} bytes",
+        signer.public_key_bytes().len()
+    );
+    println!(
+        "Uncompressed pubkey:    {} bytes",
+        signer.public_key_bytes_uncompressed().len()
+    );
+    println!(
+        "Private key:            {} bytes (zeroized on drop)",
+        signer.private_key_bytes().len()
+    );
 
     // ─── Sign & Verify ───────────────────────────────────────────────
     let message = b"Hello from trad-signer!";

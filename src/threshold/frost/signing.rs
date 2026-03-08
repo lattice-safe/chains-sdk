@@ -46,12 +46,21 @@ pub struct SigningCommitments {
 }
 
 /// A partial signature share produced in round 2.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SignatureShare {
     /// Participant identifier.
     pub identifier: u16,
     /// The partial signature scalar `z_i`.
     pub share: Scalar,
+}
+
+impl core::fmt::Debug for SignatureShare {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SignatureShare")
+            .field("identifier", &self.identifier)
+            .field("share", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// A FROST Schnorr signature (compressed point R || scalar s).
@@ -208,7 +217,9 @@ fn scalar_from_wide(bytes: &[u8; 48]) -> Scalar {
         let _bytes = [0u8; 32];
         // 2^256 mod n = 2^256 - n = 0x14551231950B75FC4402DA1732FC9BEBF
         // Actually, the easiest way: just reduce a U256 of all zeros from the top
-        let max = k256::U256::from_be_hex("0000000000000000000000000000000100000000000000000000000000000000");
+        let max = k256::U256::from_be_hex(
+            "0000000000000000000000000000000100000000000000000000000000000000",
+        );
         <Scalar as Reduce<k256::U256>>::reduce(max)
     };
 
@@ -251,8 +262,12 @@ fn compute_binding_factor(
     // encoded_commitments_hash = H5(encode(commitments))
     let mut commit_data = Vec::new();
     for c in commitments_list {
-        let hiding_enc = ProjectivePoint::from(c.hiding).to_affine().to_encoded_point(true);
-        let binding_enc = ProjectivePoint::from(c.binding).to_affine().to_encoded_point(true);
+        let hiding_enc = ProjectivePoint::from(c.hiding)
+            .to_affine()
+            .to_encoded_point(true);
+        let binding_enc = ProjectivePoint::from(c.binding)
+            .to_affine()
+            .to_encoded_point(true);
         commit_data.extend_from_slice(hiding_enc.as_bytes());
         commit_data.extend_from_slice(binding_enc.as_bytes());
     }
@@ -262,7 +277,9 @@ fn compute_binding_factor(
     let msg_hash = h4(message);
 
     // binding_factor_input = group_public_key || msg_hash || encoded_commitments_hash || I2OSP(identifier, 2)
-    let pk_enc = ProjectivePoint::from(*group_public_key).to_affine().to_encoded_point(true);
+    let pk_enc = ProjectivePoint::from(*group_public_key)
+        .to_affine()
+        .to_encoded_point(true);
     let mut input = Vec::new();
     input.extend_from_slice(pk_enc.as_bytes());
     input.extend_from_slice(&msg_hash);
@@ -340,9 +357,7 @@ pub fn sign(
         .iter()
         .find(|(id, _)| *id == key_package.identifier)
         .map(|(_, bf)| *bf)
-        .ok_or_else(|| {
-            SignerError::SigningFailed("participant not in commitments list".into())
-        })?;
+        .ok_or_else(|| SignerError::SigningFailed("participant not in commitments list".into()))?;
 
     // Lagrange coefficient
     let participant_ids: Vec<Scalar> = commitments_list
@@ -355,7 +370,9 @@ pub fn sign(
     )?;
 
     // z_i = d_i + (e_i * ρ_i) + λ_i * s_i * c
-    let z = *nonces.hiding + (*nonces.binding * my_rho) + (lambda * *key_package.secret_share() * challenge);
+    let z = *nonces.hiding
+        + (*nonces.binding * my_rho)
+        + (lambda * *key_package.secret_share() * challenge);
 
     Ok(SignatureShare {
         identifier: key_package.identifier,
@@ -489,10 +506,8 @@ pub fn verify_share(
         .iter()
         .map(|c| Scalar::from(u64::from(c.identifier)))
         .collect();
-    let lambda = derive_interpolating_value(
-        &Scalar::from(u64::from(share.identifier)),
-        &participant_ids,
-    )?;
+    let lambda =
+        derive_interpolating_value(&Scalar::from(u64::from(share.identifier)), &participant_ids)?;
 
     // lhs = z_i * G
     let lhs = ProjectivePoint::GENERATOR * share.share;
@@ -626,7 +641,10 @@ mod tests {
         let s1 = sign(&kgen.key_packages[0], n1, &comms, msg).unwrap();
         let s3 = sign(&kgen.key_packages[2], n3, &comms, msg).unwrap();
         let sig = aggregate(&comms, &[s1, s3], &group_pk, msg).unwrap();
-        assert!(verify(&sig, &group_pk, msg).unwrap(), "subset {{1,3}} must verify");
+        assert!(
+            verify(&sig, &group_pk, msg).unwrap(),
+            "subset {{1,3}} must verify"
+        );
     }
 
     // ─── Share Verification (Identifiable Abort) ────────────────
@@ -677,7 +695,9 @@ mod tests {
             let comms = vec![n1.commitments.clone(), n2.commitments.clone()];
             let s1 = sign(&kgen.key_packages[0], n1, &comms, m).unwrap();
             let s2 = sign(&kgen.key_packages[1], n2, &comms, m).unwrap();
-            aggregate(&comms, &[s1, s2], &group_pk, m).unwrap().to_bytes()
+            aggregate(&comms, &[s1, s2], &group_pk, m)
+                .unwrap()
+                .to_bytes()
         };
 
         let sig_a = make_sig(b"message A");
@@ -692,8 +712,10 @@ mod tests {
         let (kgen, _) = setup_2_of_3();
         for pkg in &kgen.key_packages {
             assert!(
-                kgen.vss_commitments.verify_share(pkg.identifier, pkg.secret_share()),
-                "VSS share must verify for participant {}", pkg.identifier
+                kgen.vss_commitments
+                    .verify_share(pkg.identifier, pkg.secret_share()),
+                "VSS share must verify for participant {}",
+                pkg.identifier
             );
         }
     }
@@ -739,9 +761,8 @@ mod tests {
         let s1 = sign(&kgen.key_packages[0], n1, &comms, msg).unwrap();
         let s2 = sign(&kgen.key_packages[1], n2, &comms, msg).unwrap();
 
-        let cheaters = identify_misbehaving(
-            &[s1, s2], &comms, &kgen.key_packages, &group_pk, msg,
-        ).unwrap();
+        let cheaters =
+            identify_misbehaving(&[s1, s2], &comms, &kgen.key_packages, &group_pk, msg).unwrap();
         assert!(cheaters.is_empty(), "no cheaters expected");
     }
 
@@ -763,9 +784,18 @@ mod tests {
         };
 
         let cheaters = identify_misbehaving(
-            &[s1, tampered_s2], &comms, &kgen.key_packages, &group_pk, msg,
-        ).unwrap();
-        assert_eq!(cheaters, vec![2], "participant 2 should be identified as cheater");
+            &[s1, tampered_s2],
+            &comms,
+            &kgen.key_packages,
+            &group_pk,
+            msg,
+        )
+        .unwrap();
+        assert_eq!(
+            cheaters,
+            vec![2],
+            "participant 2 should be identified as cheater"
+        );
     }
 
     #[test]
@@ -779,12 +809,18 @@ mod tests {
         let s1 = sign(&kgen.key_packages[0], n1, &comms, msg).unwrap();
         let s2 = sign(&kgen.key_packages[1], n2, &comms, msg).unwrap();
 
-        let bad1 = SignatureShare { identifier: s1.identifier, share: Scalar::ZERO };
-        let bad2 = SignatureShare { identifier: s2.identifier, share: Scalar::ZERO };
+        let bad1 = SignatureShare {
+            identifier: s1.identifier,
+            share: Scalar::ZERO,
+        };
+        let bad2 = SignatureShare {
+            identifier: s2.identifier,
+            share: Scalar::ZERO,
+        };
 
-        let cheaters = identify_misbehaving(
-            &[bad1, bad2], &comms, &kgen.key_packages, &group_pk, msg,
-        ).unwrap();
+        let cheaters =
+            identify_misbehaving(&[bad1, bad2], &comms, &kgen.key_packages, &group_pk, msg)
+                .unwrap();
         assert_eq!(cheaters.len(), 2, "both participants should be identified");
     }
 }

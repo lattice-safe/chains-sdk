@@ -3,9 +3,9 @@
 //! Uses the `blst` crate for BLS12-381 operations including
 //! single signing, signature aggregation, and aggregated verification.
 
-pub mod threshold;
 pub mod eip2333;
 pub mod keystore;
+pub mod threshold;
 
 use crate::error::SignerError;
 use crate::traits;
@@ -132,9 +132,8 @@ impl traits::KeyPair for BlsSigner {
     fn generate() -> Result<Self, SignerError> {
         use zeroize::Zeroize;
         let mut ikm = [0u8; 32];
-        getrandom::getrandom(&mut ikm).map_err(|_| SignerError::EntropyError)?;
-        let secret_key =
-            SecretKey::key_gen(&ikm, &[]).map_err(|_| SignerError::EntropyError)?;
+        crate::security::secure_random(&mut ikm)?;
+        let secret_key = SecretKey::key_gen(&ikm, &[]).map_err(|_| SignerError::EntropyError)?;
         ikm.zeroize(); // volatile write barrier — cannot be optimized away
         Ok(Self { secret_key })
     }
@@ -180,11 +179,7 @@ impl traits::Verifier for BlsVerifier {
     type Signature = BlsSignature;
     type Error = SignerError;
 
-    fn verify(
-        &self,
-        message: &[u8],
-        signature: &BlsSignature,
-    ) -> Result<bool, SignerError> {
+    fn verify(&self, message: &[u8], signature: &BlsSignature) -> Result<bool, SignerError> {
         let sig = BlstSignature::from_bytes(&signature.bytes)
             .map_err(|_| SignerError::InvalidSignature("invalid BLS signature".into()))?;
         let result = sig.verify(true, message, ETH2_DST, &[], &self.public_key, true);
@@ -331,25 +326,15 @@ mod tests {
         let sig2 = s2.sign(msg).unwrap();
 
         let agg_sig = aggregate_signatures(&[sig1, sig2]).unwrap();
-        let result = verify_aggregated(
-            &[s1.public_key(), s2.public_key()],
-            msg,
-            &agg_sig,
-        )
-        .unwrap();
+        let result = verify_aggregated(&[s1.public_key(), s2.public_key()], msg, &agg_sig).unwrap();
         assert!(result);
     }
 
     #[test]
     fn test_aggregate_10_sigs() {
         let msg = b"ten signers";
-        let signers: Vec<BlsSigner> = (0..10)
-            .map(|_| BlsSigner::generate().unwrap())
-            .collect();
-        let sigs: Vec<BlsSignature> = signers
-            .iter()
-            .map(|s| s.sign(msg).unwrap())
-            .collect();
+        let signers: Vec<BlsSigner> = (0..10).map(|_| BlsSigner::generate().unwrap()).collect();
+        let sigs: Vec<BlsSignature> = signers.iter().map(|s| s.sign(msg).unwrap()).collect();
         let pks: Vec<BlsPublicKey> = signers.iter().map(|s| s.public_key()).collect();
 
         let agg_sig = aggregate_signatures(&sigs).unwrap();
@@ -365,29 +350,24 @@ mod tests {
         let sig2 = s2.sign(b"different message").unwrap(); // wrong message
 
         let agg_sig = aggregate_signatures(&[sig1, sig2]).unwrap();
-        let result = verify_aggregated(
-            &[s1.public_key(), s2.public_key()],
-            msg,
-            &agg_sig,
-        )
-        .unwrap();
+        let result = verify_aggregated(&[s1.public_key(), s2.public_key()], msg, &agg_sig).unwrap();
         assert!(!result);
     }
 
     #[test]
     fn test_dst_correctness() {
-        assert_eq!(
-            ETH2_DST,
-            b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_"
-        );
+        assert_eq!(ETH2_DST, b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_");
     }
 
     #[test]
     fn test_known_vector_eth2() {
         // Use a deterministic secret key and verify sign → verify round-trip
-        let sk_bytes = hex::decode("263dbd792f5b1be47ed85f8938c0f29586af0d3ac7b977f21c278fe1462040e3").unwrap();
+        let sk_bytes =
+            hex::decode("263dbd792f5b1be47ed85f8938c0f29586af0d3ac7b977f21c278fe1462040e3")
+                .unwrap();
         let signer = BlsSigner::from_bytes(&sk_bytes).unwrap();
-        let msg = hex::decode("5656565656565656565656565656565656565656565656565656565656565656").unwrap();
+        let msg = hex::decode("5656565656565656565656565656565656565656565656565656565656565656")
+            .unwrap();
         let sig = signer.sign(&msg).unwrap();
         let verifier = BlsVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(&msg, &sig).unwrap());
