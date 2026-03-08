@@ -93,3 +93,7 @@ serde_json = "1.0"
 [[bench]]
 name = "signing_bench"
 harness = false
+
+[[bin]]
+name = "trad-signer"
+path = "src/bin/trad_signer.rs"

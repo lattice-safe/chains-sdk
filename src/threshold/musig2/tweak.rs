@@ -7,7 +7,6 @@
 
 use crate::crypto;
 use crate::error::SignerError;
-use k256::elliptic_curve::group::GroupEncoding;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, ProjectivePoint, Scalar};

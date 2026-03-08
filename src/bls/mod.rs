@@ -3,6 +3,8 @@
 //! Uses the `blst` crate for BLS12-381 operations including
 //! single signing, signature aggregation, and aggregated verification.
 
+pub mod threshold;
+
 use crate::error::SignerError;
 use crate::traits;
 use blst::min_pk::{AggregateSignature, PublicKey, SecretKey, Signature as BlstSignature};

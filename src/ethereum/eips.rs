@@ -413,7 +413,9 @@ pub const EIP2335_VERSION: u32 = 4;
 
 /// EIP-2335 keystore description type.
 pub const EIP2335_KDF: &str = "scrypt";
+/// EIP-2335 keystore cipher algorithm.
 pub const EIP2335_CIPHER: &str = "aes-128-ctr";
+/// EIP-2335 keystore checksum algorithm.
 pub const EIP2335_CHECKSUM: &str = "sha256";
 
 // ═══════════════════════════════════════════════════════════════════

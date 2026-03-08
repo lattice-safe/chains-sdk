@@ -15,7 +15,7 @@
 
 use crate::error::SignerError;
 use super::keygen::{self, KeyPackage, VssCommitments};
-use k256::{AffinePoint, ProjectivePoint, Scalar};
+use k256::{ProjectivePoint, Scalar};
 use zeroize::Zeroizing;
 
 /// A refresh package from one participant to distribute refresh deltas.

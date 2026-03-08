@@ -99,7 +99,7 @@ pub fn create_adaptor_signature(
     let adapted_encoded = adapted_affine.to_encoded_point(false);
     let mut adapted_r = [0u8; 32];
     if let Some(x) = adapted_encoded.x() {
-        adapted_r.copy_from_slice(x.as_slice());
+        adapted_r.copy_from_slice(&x[..]);
     }
 
     Ok(AdaptorSignature {

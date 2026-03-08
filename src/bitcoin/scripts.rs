@@ -1,7 +1,6 @@
 //! Bitcoin script helpers: HTLC, Timelock (CLTV/CSV), and Coin Selection.
 
 use crate::error::SignerError;
-use super::transaction::{Transaction, TxIn, TxOut, OutPoint};
 
 // ═══════════════════════════════════════════════════════════════════
 // Timelock Scripts (CLTV / CSV)

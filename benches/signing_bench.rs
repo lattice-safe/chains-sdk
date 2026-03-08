@@ -120,6 +120,28 @@ fn bench_bls(c: &mut Criterion) {
     });
 }
 
+fn bench_bls_threshold(c: &mut Criterion) {
+    use trad_signer::bls::threshold;
+
+    let kgen = threshold::threshold_keygen(2, 3).unwrap();
+    let msg = b"bls threshold bench";
+
+    c.bench_function("bls_threshold_2of3_keygen", |b| {
+        b.iter(|| threshold::threshold_keygen(black_box(2), black_box(3)).unwrap())
+    });
+    c.bench_function("bls_threshold_partial_sign", |b| {
+        b.iter(|| kgen.key_shares[0].sign(black_box(msg)).unwrap())
+    });
+    c.bench_function("bls_threshold_2of3_full", |b| {
+        b.iter(|| {
+            let p1 = kgen.key_shares[0].sign(msg).unwrap();
+            let p2 = kgen.key_shares[1].sign(msg).unwrap();
+            let agg = threshold::aggregate_partial_sigs(&[p1, p2], msg).unwrap();
+            black_box(agg)
+        })
+    });
+}
+
 criterion_group!(
     benches,
     bench_ethereum,
@@ -127,6 +149,7 @@ criterion_group!(
     bench_schnorr,
     bench_solana,
     bench_bls,
+    bench_bls_threshold,
     bench_xrp,
     bench_neo,
     bench_hd_key,

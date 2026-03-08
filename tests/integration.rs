@@ -576,3 +576,78 @@ mod bip322_vectors {
         assert!(valid, "BIP-322 P2TR roundtrip verification failed");
     }
 }
+
+// ─── BLS Threshold Integration ─────────────────────────────────────
+
+#[cfg(feature = "bls")]
+mod bls_threshold_e2e {
+    use trad_signer::bls::threshold;
+
+    #[test]
+    fn test_bls_threshold_keygen_sign_aggregate() {
+        let kgen = threshold::threshold_keygen(2, 3).unwrap();
+        let msg = b"bls threshold e2e";
+
+        let p1 = kgen.key_shares[0].sign(msg).unwrap();
+        let p2 = kgen.key_shares[1].sign(msg).unwrap();
+
+        let agg = threshold::aggregate_partial_sigs(&[p1, p2], msg).unwrap();
+        assert_ne!(agg.to_bytes(), [0u8; 96]);
+    }
+
+    #[test]
+    fn test_bls_threshold_3of5_all_subsets() {
+        let kgen = threshold::threshold_keygen(3, 5).unwrap();
+        let msg = b"subset rotation";
+
+        // Try 3 different 3-of-5 subsets
+        for subset in &[[0, 1, 2], [0, 2, 4], [1, 3, 4]] {
+            let sigs: Vec<_> = subset.iter()
+                .map(|&i| kgen.key_shares[i].sign(msg).unwrap())
+                .collect();
+            let agg = threshold::aggregate_partial_sigs(&sigs, msg).unwrap();
+            assert_ne!(agg.to_bytes(), [0u8; 96]);
+        }
+    }
+}
+
+// ─── Edge Cases ────────────────────────────────────────────────────
+
+#[cfg(all(feature = "ethereum", feature = "solana"))]
+mod edge_cases {
+    use trad_signer::traits::{KeyPair, Signer, Verifier};
+
+    #[test]
+    fn test_sign_empty_message_eth() {
+        let signer = trad_signer::ethereum::EthereumSigner::generate().unwrap();
+        let sig = signer.sign(b"").unwrap();
+        let verifier = trad_signer::ethereum::EthereumVerifier::from_public_key_bytes(
+            &signer.public_key_bytes(),
+        ).unwrap();
+        assert!(verifier.verify(b"", &sig).unwrap());
+    }
+
+    #[test]
+    fn test_sign_large_message_sol() {
+        let signer = trad_signer::solana::SolanaSigner::generate().unwrap();
+        let large_msg = vec![0xAA; 10_000];
+        let sig = signer.sign(&large_msg).unwrap();
+        let verifier = trad_signer::solana::SolanaVerifier::from_public_key_bytes(
+            &signer.public_key_bytes(),
+        ).unwrap();
+        assert!(verifier.verify(&large_msg, &sig).unwrap());
+    }
+
+    #[test]
+    fn test_wrong_key_verify_fails_sol() {
+        let signer1 = trad_signer::solana::SolanaSigner::generate().unwrap();
+        let signer2 = trad_signer::solana::SolanaSigner::generate().unwrap();
+        let msg = b"wrong key test";
+        let sig = signer1.sign(msg).unwrap();
+
+        let verifier2 = trad_signer::solana::SolanaVerifier::from_public_key_bytes(
+            &signer2.public_key_bytes(),
+        ).unwrap();
+        assert!(!verifier2.verify(msg, &sig).unwrap());
+    }
+}

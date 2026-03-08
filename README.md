@@ -1,6 +1,6 @@
 # trad-signer
 
-**Unified, secure multi-chain signing SDK for Rust.** Supports ECDSA (secp256k1, P-256), EdDSA (Ed25519), BLS12-381, Schnorr (BIP-340), FROST threshold signatures (RFC 9591), and MuSig2 multi-party signatures (BIP-327) — with BIP-32/39/44 HD key derivation, address generation, and full serde support.
+**Unified, secure multi-chain signing SDK for Rust.** Supports ECDSA (secp256k1, P-256), EdDSA (Ed25519), BLS12-381 (including threshold), Schnorr (BIP-340), FROST threshold signatures (RFC 9591), and MuSig2 multi-party signatures (BIP-327) — with BIP-32/39/44 HD key derivation, address generation, full serde support, and a CLI tool.
 
 [![Crates.io](https://img.shields.io/crates/v/trad-signer.svg)](https://crates.io/crates/trad-signer)
 [![License](https://img.shields.io/crates/l/trad-signer.svg)](LICENSE)
@@ -14,6 +14,7 @@
 | **EdDSA** | Ed25519 | Solana, XRP | RFC 8032 |
 | **Schnorr** | secp256k1 | Bitcoin (Taproot) | BIP-340 |
 | **BLS** | BLS12-381 | Beacon chain | — |
+| **BLS Threshold** | BLS12-381 | Any (t-of-n) | — |
 | **FROST** | secp256k1 + SHA-256 | Any (threshold) | RFC 9591 |
 | **MuSig2** | secp256k1 | Any (multi-party) | BIP-327 |
 
@@ -391,6 +392,16 @@ trad-signer = { version = "0.5", default-features = false, features = ["ethereum
 | `bip85` | BIP-85 deterministic entropy (child mnemonics, WIF, xprv) |
 | `serde` | Serialization support for keys and signatures |
 
+## Benchmarks
+
+Run with `cargo bench --all-features`. Covers all chains + threshold signing:
+
+| Benchmark | What it measures |
+|-----------|------------------|
+| `frost_2of3_full_sign` | FROST keygen → commit → sign → aggregate |
+| `musig2_2of2_full_sign` | MuSig2 nonce → sign → aggregate |
+| `bls_threshold_2of3_full` | BLS threshold keygen → sign → aggregate |
+
 ## Security
 
 - `#![forbid(unsafe_code)]` — zero unsafe blocks
@@ -400,7 +411,25 @@ trad-signer = { version = "0.5", default-features = false, features = ["ethereum
 - Constant-time comparisons via `subtle::ConstantTimeEq`
 - FROST nonces are single-use `Zeroizing<Scalar>` with drop guards
 - `cargo audit`: **0 vulnerabilities** across 117+ dependencies
-- **568+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, and FIPS 186-4 vectors
+- **843+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, and FIPS 186-4 vectors
+
+## CLI Tool
+
+```bash
+# Generate keys
+cargo run -- keygen ethereum
+cargo run -- keygen bitcoin
+cargo run -- keygen solana
+
+# Sign a message
+cargo run -- sign ethereum <hex-key> "hello world"
+
+# Derive address from key
+cargo run -- address ethereum <hex-key>
+
+# Verify a signature
+cargo run -- verify solana <hex-pubkey> <hex-sig> "message"
+```
 
 ## Architecture
 
@@ -410,6 +439,7 @@ src/
 ├── encoding.rs        # Shared: compact_size, bech32, base58check
 ├── error.rs           # Unified SignerError enum
 ├── traits.rs          # KeyPair, Signer, Verifier traits
+├── bin/               # CLI tool (trad-signer keygen/sign/verify/address)
 ├── bitcoin/
 │   ├── mod.rs         # ECDSA signer, WIF, P2PKH/P2WPKH, BIP-137
 │   ├── schnorr.rs     # BIP-340 Schnorr, P2TR addresses
@@ -417,17 +447,27 @@ src/
 │   ├── sighash.rs     # BIP-143/341/342 sighash computation
 │   ├── transaction.rs # Transaction serialization, txid, vsize
 │   ├── message.rs     # BIP-322 sign + verify (P2WPKH / P2TR)
-│   ├── psbt/          # BIP-174 PSBT with auto-signing (SegWit + Taproot)
-│   └── descriptor.rs  # BIP-380-386 output descriptors
-├── ethereum/          # EIP-191/712/155, ecrecover
-├── solana/            # Ed25519 signing
-├── xrp/               # ECDSA + Ed25519 dual-curve
-├── neo/               # P-256 (secp256r1)
-├── bls/               # BLS12-381 aggregated signatures
+│   ├── psbt/          # BIP-174 PSBT with auto-signing
+│   ├── descriptor.rs  # BIP-380-386 output descriptors
+│   ├── helpers.rs     # OP_RETURN, RBF, CPFP, Ordinals
+│   └── scripts.rs     # HTLC, CLTV/CSV timelock, coin selection
+├── ethereum/          # EIP-191/712/155/2612/3009/4494, ecrecover, multicall
+├── solana/
+│   ├── transaction.rs # SPL Token, System, Compute Budget
+│   └── programs.rs    # ATA, Memo v2, Stake, Durable Nonce
+├── xrp/
+│   ├── transaction.rs # Binary codec, Payment, TrustSet, multisign
+│   └── advanced.rs    # IOU amounts, DEX orders, Escrow
+├── neo/
+│   ├── transaction.rs # NeoVM scripts, NEP-17, tx builder
+│   └── witness.rs     # Witness serialization, NEP-11 NFT, GAS claim
+├── bls/
+│   ├── mod.rs         # BLS12-381 signing + aggregation
+│   └── threshold.rs   # BLS threshold (t-of-n) keygen + signing
 ├── threshold/
-│   ├── frost/         # RFC 9591 T-of-N threshold Schnorr
-│   └── musig2/        # BIP-327 N-of-N multi-party Schnorr
-├── hd_key.rs          # BIP-32/44 HD key derivation
+│   ├── frost/         # RFC 9591 T-of-N + identifiable abort + proactive refresh
+│   └── musig2/        # BIP-327 N-of-N + adaptor sigs + tweaks + nested trees
+├── hd_key.rs          # BIP-32/44 HD key derivation + xpub/xprv
 ├── mnemonic.rs        # BIP-39 seed phrases
 └── bip85.rs           # BIP-85 deterministic entropy
 ```

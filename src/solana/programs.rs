@@ -1,6 +1,5 @@
 //! Additional Solana program helpers: ATA, Memo, Stake, Durable Nonce.
 
-use crate::error::SignerError;
 use super::transaction::{Instruction, AccountMeta};
 
 // ═══════════════════════════════════════════════════════════════════
