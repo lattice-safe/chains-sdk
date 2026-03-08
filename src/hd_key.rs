@@ -14,6 +14,7 @@
 //! let eth_signer = child.to_ethereum_signer()?;
 //! ```
 
+use crate::crypto;
 use crate::error::SignerError;
 use hmac::{Hmac, Mac};
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -154,14 +155,12 @@ impl ExtendedPrivateKey {
 
         // Compute parent fingerprint: HASH160(parent_pubkey)[..4]
         let parent_fp = {
-            use sha2::Digest;
             let sk = k256::SecretKey::from_bytes((&*self.key).into())
                 .map_err(|e| SignerError::InvalidPrivateKey(e.to_string()))?;
             let pk_bytes = sk.public_key().to_encoded_point(true);
-            let sha = sha2::Sha256::digest(pk_bytes.as_bytes());
-            let ripe = ripemd::Ripemd160::digest(sha);
+            let h160 = crypto::hash160(pk_bytes.as_bytes());
             let mut fp = [0u8; 4];
-            fp.copy_from_slice(&ripe[..4]);
+            fp.copy_from_slice(&h160[..4]);
             fp
         };
 
@@ -234,11 +233,7 @@ impl ExtendedPrivateKey {
         data.push(0x00); // private key prefix
         data.extend_from_slice(&*self.key);
         // Base58Check: double-SHA256 checksum
-        let checksum = {
-            use sha2::Digest;
-            let h1 = sha2::Sha256::digest(&data);
-            sha2::Sha256::digest(h1)
-        };
+        let checksum = crypto::double_sha256(&data);
         data.extend_from_slice(&checksum[..4]);
         bs58::encode(data).into_string()
     }
@@ -253,11 +248,7 @@ impl ExtendedPrivateKey {
         data.extend_from_slice(&self.child_index.to_be_bytes());
         data.extend_from_slice(&self.chain_code);
         data.extend_from_slice(&pubkey);
-        let checksum = {
-            use sha2::Digest;
-            let h1 = sha2::Sha256::digest(&data);
-            sha2::Sha256::digest(h1)
-        };
+        let checksum = crypto::double_sha256(&data);
         data.extend_from_slice(&checksum[..4]);
         Ok(bs58::encode(data).into_string())
     }
@@ -273,11 +264,7 @@ impl ExtendedPrivateKey {
             )));
         }
         // Verify checksum
-        let checksum = {
-            use sha2::Digest;
-            let h1 = sha2::Sha256::digest(&data[..78]);
-            sha2::Sha256::digest(h1)
-        };
+        let checksum = crypto::double_sha256(&data[..78]);
         if data[78..82] != checksum[..4] {
             return Err(SignerError::InvalidPrivateKey("invalid xprv checksum".into()));
         }

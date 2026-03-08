@@ -17,6 +17,7 @@
 //! println!("Child mnemonic: {}", child_mnemonic);
 //! ```
 
+use crate::crypto;
 use crate::error::SignerError;
 use crate::hd_key::{DerivationPath, ExtendedPrivateKey};
 use hmac::{Hmac, Mac};
@@ -122,8 +123,6 @@ pub fn derive_bip39(
 
 /// Convert raw entropy bytes to a BIP-39 mnemonic phrase.
 fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, SignerError> {
-    use sha2::Digest;
-
     let wordlist = include_str!("bip39_english.txt");
     let words: Vec<&str> = wordlist.lines().collect();
     if words.len() != 2048 {
@@ -133,7 +132,7 @@ fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, SignerError> {
     }
 
     // Compute checksum: first (entropy_bits / 32) bits of SHA256(entropy)
-    let checksum_hash = sha2::Sha256::digest(entropy);
+    let checksum_hash = crypto::sha256(entropy);
     let entropy_bits = entropy.len() * 8;
     let checksum_bits = entropy_bits / 32;
 
@@ -196,10 +195,8 @@ pub fn derive_wif(
     wif_data.push(0x01); // compressed flag
 
     // Double SHA256 checksum
-    use sha2::Digest;
-    let hash1 = sha2::Sha256::digest(&wif_data);
-    let hash2 = sha2::Sha256::digest(hash1);
-    wif_data.extend_from_slice(&hash2[..4]);
+    let checksum = crypto::double_sha256(&wif_data);
+    wif_data.extend_from_slice(&checksum[..4]);
 
     Ok(bs58::encode(&wif_data).into_string())
 }

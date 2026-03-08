@@ -2,9 +2,10 @@
 //!
 //! XRP allows two key types: secp256k1 and Ed25519.
 
+use crate::crypto;
 use crate::error::SignerError;
 use crate::traits;
-use sha2::{Digest, Sha256, Sha512};
+use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
 
 /// XRP signature (variable format depending on key type).
@@ -58,11 +59,7 @@ pub fn sha512_half(data: &[u8]) -> [u8; 32] {
 
 /// Derive XRP account ID: RIPEMD160(SHA256(pubkey_bytes)).
 pub fn account_id(pubkey_bytes: &[u8]) -> [u8; 20] {
-    let sha = Sha256::digest(pubkey_bytes);
-    let ripe = ripemd::Ripemd160::digest(sha);
-    let mut out = [0u8; 20];
-    out.copy_from_slice(&ripe);
-    out
+    crypto::hash160(pubkey_bytes)
 }
 
 /// XRP Base58 alphabet (differs from Bitcoin's alphabet).
@@ -78,9 +75,8 @@ pub fn xrp_address(account_id: &[u8; 20]) -> Result<String, SignerError> {
     let mut payload = vec![0x00u8]; // version byte
     payload.extend_from_slice(account_id);
     // XRP uses double-SHA256 for checksum (same as Bitcoin)
-    let hash1 = Sha256::digest(&payload);
-    let hash2 = Sha256::digest(hash1);
-    payload.extend_from_slice(&hash2[..4]);
+    let checksum = crypto::double_sha256(&payload);
+    payload.extend_from_slice(&checksum[..4]);
     Ok(bs58::encode(payload).with_alphabet(&xrp_alphabet()?).into_string())
 }
 
@@ -102,10 +98,7 @@ pub fn validate_address(address: &str) -> bool {
     if decoded.len() != 25 || decoded[0] != 0x00 {
         return false;
     }
-    let checksum = {
-        let h1 = Sha256::digest(&decoded[..21]);
-        Sha256::digest(h1)
-    };
+    let checksum = crypto::double_sha256(&decoded[..21]);
     decoded[21..25] == checksum[..4]
 }
 

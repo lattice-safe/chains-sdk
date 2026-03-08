@@ -10,12 +10,13 @@ pub mod tapscript;
 pub mod psbt;
 pub mod descriptor;
 
+use crate::crypto;
+use crate::encoding;
 use crate::error::SignerError;
 use crate::traits;
 use k256::ecdsa::signature::hazmat::PrehashSigner;
 use k256::ecdsa::{Signature as K256Signature, SigningKey, VerifyingKey};
 use k256::ecdsa::signature::hazmat::PrehashVerifier;
-use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 /// A Bitcoin ECDSA signature in DER encoding.
@@ -44,11 +45,7 @@ impl BitcoinSignature {
 
 /// Double-SHA-256: SHA256(SHA256(data)).
 pub fn double_sha256(data: &[u8]) -> [u8; 32] {
-    let first = Sha256::digest(data);
-    let second = Sha256::digest(first);
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&second);
-    out
+    crypto::double_sha256(data)
 }
 
 /// Bitcoin ECDSA signer.
@@ -189,32 +186,17 @@ impl BitcoinSigner {
 
 /// HASH160: RIPEMD160(SHA256(data)) — the standard Bitcoin hash function.
 pub fn hash160(data: &[u8]) -> [u8; 20] {
-    use sha2::Digest as _;
-    let sha = Sha256::digest(data);
-    let ripe = ripemd::Ripemd160::digest(sha);
-    let mut out = [0u8; 20];
-    out.copy_from_slice(&ripe);
-    out
+    crypto::hash160(data)
 }
 
 /// Base58Check encode: `version_byte || payload || checksum[0..4]`.
 fn base58check_encode(version: u8, payload: &[u8]) -> String {
-    let mut prefixed = vec![version];
-    prefixed.extend_from_slice(payload);
-    let checksum = double_sha256(&prefixed);
-    prefixed.extend_from_slice(&checksum[..4]);
-    bs58::encode(prefixed).into_string()
+    encoding::base58check_encode(version, payload)
 }
 
 /// Bech32/Bech32m encode for SegWit/Taproot addresses.
 pub(crate) fn bech32_encode(hrp: &str, witness_version: u8, program: &[u8]) -> Result<String, SignerError> {
-    use bech32::Hrp;
-    let hrp = Hrp::parse(hrp)
-        .map_err(|e| SignerError::InvalidPublicKey(format!("bech32 hrp: {e}")))?;
-    let version = bech32::Fe32::try_from(witness_version)
-        .map_err(|e| SignerError::InvalidPublicKey(format!("witness version: {e}")))?;
-    bech32::segwit::encode(hrp, version, program)
-        .map_err(|e| SignerError::InvalidPublicKey(format!("bech32 encode: {e}")))
+    encoding::bech32_encode(hrp, witness_version, program)
 }
 
 /// **BIP-137**: Hash a message with the Bitcoin Signed Message prefix.
@@ -232,17 +214,9 @@ pub fn bitcoin_message_hash(message: &[u8]) -> [u8; 32] {
 
 /// Bitcoin variable-length integer encoding.
 fn varint_encode(n: usize) -> Vec<u8> {
-    if n < 0xFD {
-        vec![n as u8]
-    } else if n <= 0xFFFF {
-        let mut out = vec![0xFD];
-        out.extend_from_slice(&(n as u16).to_le_bytes());
-        out
-    } else {
-        let mut out = vec![0xFE];
-        out.extend_from_slice(&(n as u32).to_le_bytes());
-        out
-    }
+    let mut buf = Vec::new();
+    encoding::encode_compact_size(&mut buf, n as u64);
+    buf
 }
 
 /// Validate a Bitcoin address string.

@@ -1,11 +1,11 @@
 //! NEO ECDSA signer using NIST P-256 (secp256r1) + SHA-256.
 
+use crate::crypto;
 use crate::error::SignerError;
 use crate::traits;
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::signature::hazmat::PrehashVerifier;
 use p256::ecdsa::{Signature as P256Signature, SigningKey, VerifyingKey};
-use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 /// A NEO ECDSA signature (64 bytes, r || s).
@@ -52,11 +52,7 @@ impl NeoSigner {
         script.extend_from_slice(pubkey.as_bytes());
         script.push(0xAC); // CHECKSIG opcode
 
-        let sha = Sha256::digest(&script);
-        let ripe = ripemd::Ripemd160::digest(sha);
-        let mut out = [0u8; 20];
-        out.copy_from_slice(&ripe);
-        out
+        crypto::hash160(&script)
     }
 
     /// Return the NEO `A...` address string.
@@ -66,10 +62,7 @@ impl NeoSigner {
         let hash = self.script_hash();
         let mut payload = vec![0x17u8]; // NEO version byte
         payload.extend_from_slice(&hash);
-        let checksum = {
-            let h1 = Sha256::digest(&payload);
-            Sha256::digest(h1)
-        };
+        let checksum = crypto::double_sha256(&payload);
         payload.extend_from_slice(&checksum[..4]);
         bs58::encode(payload).into_string()
     }
@@ -89,10 +82,7 @@ pub fn validate_address(address: &str) -> bool {
     if decoded.len() != 25 || decoded[0] != 0x17 {
         return false;
     }
-    let checksum = {
-        let h1 = Sha256::digest(&decoded[..21]);
-        Sha256::digest(h1)
-    };
+    let checksum = crypto::double_sha256(&decoded[..21]);
     decoded[21..25] == checksum[..4]
 }
 
@@ -119,9 +109,7 @@ impl traits::Signer for NeoSigner {
     type Error = SignerError;
 
     fn sign(&self, message: &[u8]) -> Result<NeoSignature, SignerError> {
-        let digest = Sha256::digest(message);
-        let mut hash = [0u8; 32];
-        hash.copy_from_slice(&digest);
+        let hash = crypto::sha256(message);
         self.sign_digest(&hash)
     }
 
@@ -209,9 +197,7 @@ impl traits::Verifier for NeoVerifier {
     type Error = SignerError;
 
     fn verify(&self, message: &[u8], signature: &NeoSignature) -> Result<bool, SignerError> {
-        let digest = Sha256::digest(message);
-        let mut hash = [0u8; 32];
-        hash.copy_from_slice(&digest);
+        let hash = crypto::sha256(message);
         self.verify_digest(&hash, signature)
     }
 
@@ -308,7 +294,7 @@ mod tests {
     fn test_sign_prehashed_roundtrip() {
         let signer = NeoSigner::generate().unwrap();
         let msg = b"prehash neo";
-        let digest = Sha256::digest(msg);
+        let digest = crate::crypto::sha256(msg);
         let sig = signer.sign_prehashed(&digest).unwrap();
         let verifier = NeoVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify_prehashed(&digest, &sig).unwrap());
