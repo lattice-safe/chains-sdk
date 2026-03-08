@@ -22,7 +22,7 @@
 
 ```toml
 [dependencies]
-trad-signer = "0.5"
+trad-signer = "0.6"
 ```
 
 ---
@@ -401,6 +401,9 @@ Run with `cargo bench --all-features`. Covers all chains + threshold signing:
 | `frost_2of3_full_sign` | FROST keygen → commit → sign → aggregate |
 | `musig2_2of2_full_sign` | MuSig2 nonce → sign → aggregate |
 | `bls_threshold_2of3_full` | BLS threshold keygen → sign → aggregate |
+| `eip2333_derive_master` | EIP-2333 master key derivation from seed |
+| `eip2333_derive_child` | EIP-2333 child key derivation |
+| `eip2333_validator_path` | EIP-2333 full validator path (5 levels) |
 
 ## Security
 
@@ -411,7 +414,7 @@ Run with `cargo bench --all-features`. Covers all chains + threshold signing:
 - Constant-time comparisons via `subtle::ConstantTimeEq`
 - FROST nonces are single-use `Zeroizing<Scalar>` with drop guards
 - `cargo audit`: **0 vulnerabilities** across 117+ dependencies
-- **843+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, and FIPS 186-4 vectors
+- **859+ tests** including NIST SHA-256, BIP-32, BIP-39, BIP-85, BIP-137, BIP-143, BIP-174, BIP-322, BIP-327, BIP-340, BIP-341, BIP-342, RFC 6979, RFC 8032, RFC 9591, EIP-2333, and FIPS 186-4 vectors
 
 ## CLI Tool
 
@@ -463,7 +466,8 @@ src/
 │   └── witness.rs     # Witness serialization, NEP-11 NFT, GAS claim
 ├── bls/
 │   ├── mod.rs         # BLS12-381 signing + aggregation
-│   └── threshold.rs   # BLS threshold (t-of-n) keygen + signing
+│   ├── threshold.rs   # BLS threshold (t-of-n) keygen + signing
+│   └── eip2333.rs     # EIP-2333 key derivation + EIP-2334 paths
 ├── threshold/
 │   ├── frost/         # RFC 9591 T-of-N + identifiable abort + proactive refresh
 │   └── musig2/        # BIP-327 N-of-N + adaptor sigs + tweaks + nested trees

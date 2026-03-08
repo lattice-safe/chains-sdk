@@ -651,3 +651,83 @@ mod edge_cases {
         assert!(!verifier2.verify(msg, &sig).unwrap());
     }
 }
+
+// ─── EIP-2333 BLS Key Derivation Integration ──────────────────────
+
+#[cfg(feature = "bls")]
+mod eip2333_integration {
+    use trad_signer::bls::eip2333;
+    use trad_signer::traits::{KeyPair, Signer, Verifier};
+
+    #[test]
+    fn test_eip2333_validator_signing_roundtrip() {
+        let seed = [0xAB; 64];
+        let signer = eip2333::validator_signer(&seed, 0).unwrap();
+        let msg = b"beacon chain attestation";
+        let sig = signer.sign(msg).unwrap();
+
+        let verifier = trad_signer::bls::BlsVerifier::from_public_key_bytes(
+            &Signer::public_key_bytes(&signer),
+        ).unwrap();
+        assert!(verifier.verify(msg, &sig).unwrap());
+    }
+
+    #[test]
+    fn test_eip2333_multiple_validators() {
+        let seed = [0xAB; 64];
+        let s0 = eip2333::validator_signer(&seed, 0).unwrap();
+        let s1 = eip2333::validator_signer(&seed, 1).unwrap();
+        let s2 = eip2333::validator_signer(&seed, 2).unwrap();
+
+        // Different validators produce different pubkeys
+        assert_ne!(Signer::public_key_bytes(&s0), Signer::public_key_bytes(&s1));
+        assert_ne!(Signer::public_key_bytes(&s1), Signer::public_key_bytes(&s2));
+
+        // But same seed + index is deterministic
+        let s0_again = eip2333::validator_signer(&seed, 0).unwrap();
+        assert_eq!(Signer::public_key_bytes(&s0), Signer::public_key_bytes(&s0_again));
+    }
+
+    #[test]
+    fn test_eip2333_mnemonic_to_validator() {
+        use trad_signer::mnemonic::Mnemonic;
+
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let mnemonic = Mnemonic::from_phrase(phrase).unwrap();
+        let seed_bytes = mnemonic.to_seed("");
+
+        let signer = eip2333::validator_signer(&*seed_bytes, 0).unwrap();
+        let msg = b"from mnemonic";
+        let sig = signer.sign(msg).unwrap();
+        assert_ne!(sig.to_bytes(), [0u8; 96]);
+    }
+}
+
+// ─── FROST Large Group ────────────────────────────────────────────
+
+#[cfg(feature = "frost")]
+mod frost_large {
+    use trad_signer::threshold::frost::{keygen, signing};
+
+    #[test]
+    fn test_frost_5_of_9_full() {
+        let secret = [0xCD; 32];
+        let kgen = keygen::trusted_dealer_keygen(&secret, 5, 9).unwrap();
+        let msg = b"large group frost";
+
+        // Use participants 0, 2, 4, 6, 8
+        let indices: Vec<usize> = vec![0, 2, 4, 6, 8];
+
+        let nonces: Vec<_> = indices.iter()
+            .map(|&i| signing::commit(&kgen.key_packages[i]).unwrap())
+            .collect();
+        let comms: Vec<_> = nonces.iter().map(|n| n.commitments.clone()).collect();
+
+        let sigs: Vec<_> = indices.iter().zip(nonces.into_iter())
+            .map(|(&i, nonce)| signing::sign(&kgen.key_packages[i], nonce, &comms, msg).unwrap())
+            .collect();
+
+        let sig = signing::aggregate(&comms, &sigs, &kgen.group_public_key, msg).unwrap();
+        assert!(signing::verify(&sig, &kgen.group_public_key, msg).unwrap());
+    }
+}

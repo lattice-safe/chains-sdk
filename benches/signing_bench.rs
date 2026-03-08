@@ -142,6 +142,23 @@ fn bench_bls_threshold(c: &mut Criterion) {
     });
 }
 
+fn bench_bls_eip2333(c: &mut Criterion) {
+    use trad_signer::bls::eip2333;
+
+    let seed = [0xABu8; 64];
+    let master = eip2333::derive_master_sk(&seed).unwrap();
+
+    c.bench_function("eip2333_derive_master", |b| {
+        b.iter(|| eip2333::derive_master_sk(black_box(&seed)).unwrap())
+    });
+    c.bench_function("eip2333_derive_child", |b| {
+        b.iter(|| eip2333::derive_child_sk(black_box(&master), black_box(0)).unwrap())
+    });
+    c.bench_function("eip2333_validator_path", |b| {
+        b.iter(|| eip2333::derive_key_from_path(black_box(&seed), &[12381, 3600, 0, 0, 0]).unwrap())
+    });
+}
+
 criterion_group!(
     benches,
     bench_ethereum,
@@ -150,6 +167,7 @@ criterion_group!(
     bench_solana,
     bench_bls,
     bench_bls_threshold,
+    bench_bls_eip2333,
     bench_xrp,
     bench_neo,
     bench_hd_key,
