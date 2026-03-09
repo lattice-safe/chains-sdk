@@ -153,13 +153,34 @@ pub struct CompiledInstruction {
 impl Message {
     /// Build a message from instructions and a fee payer.
     ///
-    /// Deduplicates accounts and sorts them per Solana's rules:
-    /// 1. Writable signers (fee payer first)
-    /// 2. Read-only signers
-    /// 3. Writable non-signers
-    /// 4. Read-only non-signers
+    /// # Panics
+    /// Panics if any instruction references an account key not present in the
+    /// deduplicated key list, or if the key list exceeds 256 entries.
+    /// Use [`try_new`](Self::try_new) for the fallible version.
     #[must_use]
     pub fn new(instructions: &[Instruction], fee_payer: [u8; 32]) -> Self {
+        match Self::try_new(instructions, fee_payer) {
+            Ok(msg) => msg,
+            Err(_) => {
+                // All instructions were built by our own constructors, so key
+                // lookups should never fail.  If they do, the caller assembled
+                // an invalid instruction set — surface this loudly.
+                #[allow(clippy::panic)]
+                {
+                    panic!(
+                        "Message::new: instruction references unknown account key \
+                         or key list exceeds u8::MAX"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Fallible version of [`new`](Self::new).
+    ///
+    /// Returns an error if any instruction references an account key not
+    /// present in the deduplicated key list, or if the key list exceeds 256.
+    pub fn try_new(instructions: &[Instruction], fee_payer: [u8; 32]) -> Result<Self, SignerError> {
         let mut writable_signers: Vec<[u8; 32]> = vec![fee_payer];
         let mut readonly_signers: Vec<[u8; 32]> = Vec::new();
         let mut writable_nonsigners: Vec<[u8; 32]> = Vec::new();
@@ -204,6 +225,16 @@ impl Message {
             }
         }
 
+        let total_keys = writable_signers.len()
+            + readonly_signers.len()
+            + writable_nonsigners.len()
+            + readonly_nonsigners.len();
+        if total_keys > 256 {
+            return Err(SignerError::ParseError(format!(
+                "too many account keys: {total_keys}, max 256"
+            )));
+        }
+
         let num_required_signatures = (writable_signers.len() + readonly_signers.len()) as u8;
         let num_readonly_signed = readonly_signers.len() as u8;
         let num_readonly_unsigned = readonly_nonsigners.len() as u8;
@@ -215,39 +246,39 @@ impl Message {
         account_keys.extend_from_slice(&readonly_nonsigners);
 
         // Compile instructions
-        let compiled = instructions
-            .iter()
-            .map(|ix| {
-                let program_id_index = account_keys
+        let mut compiled = Vec::with_capacity(instructions.len());
+        for ix in instructions {
+            let program_id_index = account_keys
+                .iter()
+                .position(|k| *k == ix.program_id)
+                .ok_or_else(|| {
+                    SignerError::ParseError("program id not found in account keys".into())
+                })? as u8;
+            let mut accounts = Vec::with_capacity(ix.accounts.len());
+            for a in &ix.accounts {
+                let idx = account_keys
                     .iter()
-                    .position(|k| *k == ix.program_id)
-                    .unwrap_or(0) as u8;
-                let accounts: Vec<u8> = ix
-                    .accounts
-                    .iter()
-                    .map(|a| {
-                        account_keys
-                            .iter()
-                            .position(|k| *k == a.pubkey)
-                            .unwrap_or(0) as u8
-                    })
-                    .collect();
-                CompiledInstruction {
-                    program_id_index,
-                    accounts,
-                    data: ix.data.clone(),
-                }
-            })
-            .collect();
+                    .position(|k| *k == a.pubkey)
+                    .ok_or_else(|| {
+                        SignerError::ParseError("account key not found in key list".into())
+                    })? as u8;
+                accounts.push(idx);
+            }
+            compiled.push(CompiledInstruction {
+                program_id_index,
+                accounts,
+                data: ix.data.clone(),
+            });
+        }
 
-        Self {
+        Ok(Self {
             num_required_signatures,
             num_readonly_signed_accounts: num_readonly_signed,
             num_readonly_unsigned_accounts: num_readonly_unsigned,
             account_keys,
             recent_blockhash: [0u8; 32], // set later
             instructions: compiled,
-        }
+        })
     }
 
     /// Serialize the message to bytes for signing.

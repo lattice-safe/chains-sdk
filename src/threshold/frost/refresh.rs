@@ -101,13 +101,25 @@ pub fn apply_refresh(
     key_package: &KeyPackage,
     refresh_packages: &[RefreshPackage],
 ) -> Result<KeyPackage, SignerError> {
-    let my_idx = (key_package.identifier - 1) as usize;
+    let my_idx = match key_package.identifier.checked_sub(1) {
+        Some(idx) => idx as usize,
+        None => {
+            return Err(SignerError::ParseError(
+                "invalid key package identifier: must be >= 1".into(),
+            ))
+        }
+    };
 
     // Verify each refresh package's delta against VSS commitments
     for pkg in refresh_packages {
         if my_idx >= pkg.deltas.len() {
             return Err(SignerError::ParseError(
                 "refresh package missing delta".into(),
+            ));
+        }
+        if pkg.commitments.commitments.is_empty() {
+            return Err(SignerError::ParseError(
+                "refresh package has empty commitments".into(),
             ));
         }
         // Verify: the commitment at index 0 should be identity (zero secret)

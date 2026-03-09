@@ -100,9 +100,12 @@ impl EthereumSignature {
         if self.v >= 35 {
             // EIP-155: recovery_bit = (v - 35) % 2
             ((self.v - 35) % 2) as u8
+        } else if self.v == 28 {
+            1
         } else {
-            // Legacy: v = 27 or 28
-            (self.v.wrapping_sub(27) & 1) as u8
+            // v == 27 or any other value → 0
+            // (callers validate via RecoveryId::try_from)
+            0
         }
     }
 }
