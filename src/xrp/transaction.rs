@@ -7,6 +7,8 @@
 //!
 //! Field encoding follows the XRPL serialization format specification.
 
+use crate::error::SignerError;
+
 // ═══════════════════════════════════════════════════════════════════
 // Binary Codec — Field Encoding
 // ═══════════════════════════════════════════════════════════════════
@@ -222,7 +224,7 @@ pub fn serialize_trust_set(
     fee_drops: u64,
     sequence: u32,
     last_ledger_sequence: u32,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, SignerError> {
     let mut buf = Vec::new();
 
     // TransactionType
@@ -260,39 +262,117 @@ pub fn serialize_trust_set(
     // For simplicity, we encode the currency/issuer/value inline
     buf.extend_from_slice(&encode_field_id(14, 3)); // LimitAmount object marker
                                                     // Encode issued amount: 48 bytes (8 value + 20 currency + 20 issuer)
-    let encoded_amount = encode_issued_amount(limit_amount);
+    let encoded_amount = encode_issued_amount(limit_amount)?;
     buf.extend_from_slice(&encoded_amount);
 
-    buf
+    Ok(buf)
 }
 
-fn encode_issued_amount(amount: &IssuedAmount) -> Vec<u8> {
+fn encode_issued_amount(amount: &IssuedAmount) -> Result<Vec<u8>, SignerError> {
     let mut buf = Vec::new();
-    // Encode value as IOU amount (simplified — sets bit 63 for IOU flag)
-    let value_bytes = encode_iou_value(&amount.value);
+    // Encode value as IOU amount per XRPL serialization spec
+    let value_bytes = encode_iou_value(&amount.value)?;
     buf.extend_from_slice(&value_bytes);
     buf.extend_from_slice(&amount.currency);
     buf.extend_from_slice(&amount.issuer);
-    buf
+    Ok(buf)
 }
 
-fn encode_iou_value(value: &str) -> [u8; 8] {
-    // Simplified IOU encoding: parse as f64, encode as XRPL format
-    // In production this needs precise decimal handling
-    let val: f64 = value.parse().unwrap_or(0.0);
-    if val == 0.0 {
-        return 0x8000_0000_0000_0000u64.to_be_bytes();
+/// Parse a decimal string into (is_negative, mantissa, exponent) per XRPL spec.
+///
+/// XRPL IOU amounts are canonical when mantissa is in [1e15, 1e16).
+/// Exponent range is [-96, 80].
+fn parse_xrpl_decimal(value: &str) -> Result<(bool, u64, i8), SignerError> {
+    let s = value.trim();
+    if s.is_empty() {
+        return Err(SignerError::ParseError("empty IOU value".into()));
     }
-    // Set IOU flag (bit 63) and positive flag (bit 62)
-    let mut encoded = 0x8000_0000_0000_0000u64;
-    if val > 0.0 {
-        encoded |= 0x4000_0000_0000_0000;
+
+    let (negative, abs_str) = if let Some(rest) = s.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, s)
+    };
+
+    // Split into integer and fractional parts
+    let (int_part, frac_part) = if let Some((i, f)) = abs_str.split_once('.') {
+        (i, f)
+    } else {
+        (abs_str, "")
+    };
+
+    // Validate all characters are digits
+    if !int_part.chars().all(|c| c.is_ascii_digit()) || !frac_part.chars().all(|c| c.is_ascii_digit()) {
+        return Err(SignerError::ParseError(format!(
+            "invalid IOU value: {value}"
+        )));
     }
-    // Store mantissa in lower bits (simplified)
-    let abs_val = val.abs();
-    let mantissa = (abs_val * 1_000_000.0) as u64;
+    if int_part.is_empty() && frac_part.is_empty() {
+        return Err(SignerError::ParseError(format!(
+            "invalid IOU value: {value}"
+        )));
+    }
+
+    // Concatenate digits to form the full integer and track the exponent offset
+    let combined = format!("{int_part}{frac_part}");
+    let frac_len = frac_part.len() as i32;
+
+    // Strip leading zeros
+    let stripped = combined.trim_start_matches('0');
+    if stripped.is_empty() {
+        // Value is zero
+        return Ok((false, 0, 0));
+    }
+
+    // Parse the stripped digits as mantissa
+    let mut mantissa: u64 = stripped
+        .parse()
+        .map_err(|_| SignerError::ParseError(format!("IOU value too large: {value}")))?;
+    let mut exponent: i32 = -(frac_len) + (combined.len() as i32 - stripped.len() as i32);
+
+    // Normalize: mantissa must be in [1e15, 1e16)
+    const MIN_MANTISSA: u64 = 1_000_000_000_000_000;
+    const MAX_MANTISSA: u64 = 10_000_000_000_000_000;
+
+    while mantissa < MIN_MANTISSA {
+        mantissa *= 10;
+        exponent -= 1;
+    }
+    while mantissa >= MAX_MANTISSA {
+        mantissa /= 10;
+        exponent += 1;
+    }
+
+    // Validate exponent range
+    if !(-96..=80).contains(&exponent) {
+        return Err(SignerError::ParseError(format!(
+            "IOU exponent {exponent} out of range [-96, 80]"
+        )));
+    }
+
+    Ok((negative, mantissa, exponent as i8))
+}
+
+fn encode_iou_value(value: &str) -> Result<[u8; 8], SignerError> {
+    let (negative, mantissa, exponent) = parse_xrpl_decimal(value)?;
+
+    if mantissa == 0 {
+        return Ok(0x8000_0000_0000_0000u64.to_be_bytes());
+    }
+
+    // Bit 63: always 1 (IOU flag)
+    // Bit 62: 1 if positive, 0 if negative
+    // Bits 54–61: exponent + 97 (biased, 8 bits)
+    // Bits 0–53: mantissa (54 bits)
+    let mut encoded: u64 = 0x8000_0000_0000_0000; // IOU flag
+    if !negative {
+        encoded |= 0x4000_0000_0000_0000; // positive flag
+    }
+    let biased_exp = (exponent as i32 + 97) as u64;
+    encoded |= (biased_exp & 0xFF) << 54;
     encoded |= mantissa & 0x003F_FFFF_FFFF_FFFF;
-    encoded.to_be_bytes()
+
+    Ok(encoded.to_be_bytes())
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -441,8 +521,45 @@ mod tests {
             issuer: [0xBB; 20],
             value: "100".to_string(),
         };
-        let blob = serialize_trust_set(&account, &limit, 12, 1, 100);
+        let blob = serialize_trust_set(&account, &limit, 12, 1, 100).unwrap();
         assert!(!blob.is_empty());
+    }
+
+    #[test]
+    fn test_iou_zero_encoding() {
+        let result = encode_iou_value("0").unwrap();
+        assert_eq!(result, 0x8000_0000_0000_0000u64.to_be_bytes());
+    }
+
+    #[test]
+    fn test_iou_positive_value() {
+        let result = encode_iou_value("100").unwrap();
+        let val = u64::from_be_bytes(result);
+        // Must have IOU flag (bit 63) and positive flag (bit 62)
+        assert!(val & 0x8000_0000_0000_0000 != 0);
+        assert!(val & 0x4000_0000_0000_0000 != 0);
+    }
+
+    #[test]
+    fn test_iou_negative_value() {
+        let result = encode_iou_value("-50.5").unwrap();
+        let val = u64::from_be_bytes(result);
+        // Must have IOU flag but NOT positive flag
+        assert!(val & 0x8000_0000_0000_0000 != 0);
+        assert!(val & 0x4000_0000_0000_0000 == 0);
+    }
+
+    #[test]
+    fn test_iou_invalid_value_rejected() {
+        assert!(encode_iou_value("abc").is_err());
+        assert!(encode_iou_value("").is_err());
+    }
+
+    #[test]
+    fn test_iou_decimal_precision() {
+        // "0.001" should not silently become 0
+        let result = encode_iou_value("0.001").unwrap();
+        assert_ne!(result, 0x8000_0000_0000_0000u64.to_be_bytes());
     }
 
     // ─── Multisign Tests ───────────────────────────────────────────

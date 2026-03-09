@@ -152,7 +152,14 @@ pub fn dkg_finalize(
 ) -> Result<(KeyPackage, AffinePoint), SignerError> {
     // Verify all received shares against VSS commitments
     for share in received_shares {
-        let sender_idx = (share.sender - 1) as usize;
+        let sender_idx = match share.sender.checked_sub(1) {
+            Some(idx) => idx as usize,
+            None => {
+                return Err(SignerError::ParseError(
+                    "invalid sender id: must be >= 1".into(),
+                ))
+            }
+        };
         if sender_idx >= round1_packages.len() {
             return Err(SignerError::ParseError("invalid sender id".into()));
         }
@@ -176,6 +183,11 @@ pub fn dkg_finalize(
     // Compute the group public key: sum of all C_0 commitments
     let mut group_pk = ProjectivePoint::IDENTITY;
     for pkg in round1_packages {
+        if pkg.commitments.commitments.is_empty() {
+            return Err(SignerError::ParseError(
+                "DKG round1 package has empty commitments".into(),
+            ));
+        }
         group_pk += ProjectivePoint::from(pkg.commitments.commitments[0]);
     }
     let group_public_key = group_pk.to_affine();

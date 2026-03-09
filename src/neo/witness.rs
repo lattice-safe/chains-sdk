@@ -1,6 +1,7 @@
 //! NEO N3 Witness serialization, NEP-11 (NFT), and GAS claim helpers.
 
 use sha2::{Digest, Sha256};
+use crate::crypto::hash160;
 
 // ═══════════════════════════════════════════════════════════════════
 // Witness Serialization
@@ -103,16 +104,7 @@ impl Witness {
     ///
     /// ScriptHash = RIPEMD160(SHA256(verification_script))
     pub fn script_hash(&self) -> [u8; 20] {
-        let sha = {
-            let mut h = Sha256::new();
-            h.update(&self.verification_script);
-            h.finalize()
-        };
-        // Simple RIPEMD-160 substitute using SHA-256 truncation
-        // (Real implementation would use RIPEMD-160)
-        let mut out = [0u8; 20];
-        out.copy_from_slice(&sha[..20]);
-        out
+        hash160(&self.verification_script)
     }
 }
 

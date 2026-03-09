@@ -128,12 +128,12 @@ fn bench_bls_threshold(c: &mut Criterion) {
         b.iter(|| threshold::threshold_keygen(black_box(2), black_box(3)).unwrap())
     });
     c.bench_function("bls_threshold_partial_sign", |b| {
-        b.iter(|| kgen.key_shares[0].sign(black_box(msg)).unwrap())
+        b.iter(|| kgen.key_shares()[0].sign(black_box(msg)).unwrap())
     });
     c.bench_function("bls_threshold_2of3_full", |b| {
         b.iter(|| {
-            let p1 = kgen.key_shares[0].sign(msg).unwrap();
-            let p2 = kgen.key_shares[1].sign(msg).unwrap();
+            let p1 = kgen.key_shares()[0].sign(msg).unwrap();
+            let p2 = kgen.key_shares()[1].sign(msg).unwrap();
             let agg = threshold::aggregate_partial_sigs(&[p1, p2], msg).unwrap();
             black_box(agg)
         })

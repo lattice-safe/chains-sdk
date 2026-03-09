@@ -545,13 +545,7 @@ fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction,
     let gas_price = items[1].as_bytes()?.to_vec();
     let gas_limit = items[2].as_u64()?;
     let to_bytes = items[3].as_bytes()?;
-    let to = if to_bytes.len() == 20 {
-        let mut addr = [0u8; 20];
-        addr.copy_from_slice(to_bytes);
-        Some(addr)
-    } else {
-        None
-    };
+    let to = decode_to_address(to_bytes)?;
     let value = items[4].as_bytes()?.to_vec();
     let data = items[5].as_bytes()?.to_vec();
     let v = items[6].as_u64()?;
@@ -559,8 +553,15 @@ fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction,
     let s = pad_to_32(items[8].as_bytes()?);
 
     // EIP-155: chain_id = (v - 35) / 2
-    let chain_id = if v >= 35 { (v - 35) / 2 } else { 0 };
-    let recovery_id = if v >= 35 { (v - 35) % 2 } else { v - 27 };
+    let (chain_id, recovery_id) = if v >= 35 {
+        ((v - 35) / 2, ((v - 35) % 2) as u8)
+    } else if v == 27 || v == 28 {
+        (0, (v - 27) as u8)
+    } else {
+        return Err(SignerError::ParseError(format!(
+            "legacy tx: invalid v value {v}"
+        )));
+    };
 
     // Reconstruct signing payload for ecrecover
     let mut sign_items = Vec::new();
@@ -577,7 +578,7 @@ fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction,
     }
     let signing_hash = keccak256(&rlp::encode_list(&sign_items));
 
-    let from = recover_signer(&signing_hash, &r, &s, recovery_id as u8)?;
+    let from = recover_signer(&signing_hash, &r, &s, recovery_id)?;
 
     Ok(DecodedTransaction {
         tx_type: TxType::Legacy,
@@ -611,13 +612,7 @@ fn decode_type1_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let gas_price = items[2].as_bytes()?.to_vec();
     let gas_limit = items[3].as_u64()?;
     let to_bytes = items[4].as_bytes()?;
-    let to = if to_bytes.len() == 20 {
-        let mut a = [0u8; 20];
-        a.copy_from_slice(to_bytes);
-        Some(a)
-    } else {
-        None
-    };
+    let to = decode_to_address(to_bytes)?;
     let value = items[5].as_bytes()?.to_vec();
     let data = items[6].as_bytes()?.to_vec();
     // items[7] = access_list (skip for decode)
@@ -675,13 +670,7 @@ fn decode_type2_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let max_fee = items[3].as_bytes()?.to_vec();
     let gas_limit = items[4].as_u64()?;
     let to_bytes = items[5].as_bytes()?;
-    let to = if to_bytes.len() == 20 {
-        let mut a = [0u8; 20];
-        a.copy_from_slice(to_bytes);
-        Some(a)
-    } else {
-        None
-    };
+    let to = decode_to_address(to_bytes)?;
     let value = items[6].as_bytes()?.to_vec();
     let data = items[7].as_bytes()?.to_vec();
     // items[8] = access_list
@@ -739,13 +728,7 @@ fn decode_type3_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let max_fee = items[3].as_bytes()?.to_vec();
     let gas_limit = items[4].as_u64()?;
     let to_bytes = items[5].as_bytes()?;
-    let to = if to_bytes.len() == 20 {
-        let mut a = [0u8; 20];
-        a.copy_from_slice(to_bytes);
-        Some(a)
-    } else {
-        None
-    };
+    let to = decode_to_address(to_bytes)?;
     let value = items[6].as_bytes()?.to_vec();
     let data = items[7].as_bytes()?.to_vec();
     // items[8] = access_list, items[9] = max_fee_per_blob_gas, items[10] = blob_hashes
@@ -804,6 +787,21 @@ fn re_encode_rlp_item(item: &rlp::RlpItem) -> Vec<u8> {
     }
 }
 
+/// Decode the `to` field: empty = contract creation, 20 bytes = address, otherwise error.
+fn decode_to_address(bytes: &[u8]) -> Result<Option<[u8; 20]>, SignerError> {
+    match bytes.len() {
+        0 => Ok(None),
+        20 => {
+            let mut addr = [0u8; 20];
+            addr.copy_from_slice(bytes);
+            Ok(Some(addr))
+        }
+        n => Err(SignerError::ParseError(format!(
+            "invalid to address length: expected 0 or 20, got {n}"
+        ))),
+    }
+}
+
 /// Recover the signer address from a message hash and ECDSA signature.
 fn recover_signer(
     hash: &[u8; 32],
@@ -813,12 +811,18 @@ fn recover_signer(
 ) -> Result<[u8; 20], SignerError> {
     use k256::ecdsa::{RecoveryId, Signature as K256Signature, VerifyingKey};
 
+    if recovery_id > 1 {
+        return Err(SignerError::InvalidSignature(format!(
+            "invalid recovery id: {recovery_id}, expected 0 or 1"
+        )));
+    }
+
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(r);
     sig_bytes[32..].copy_from_slice(s);
     let sig = K256Signature::from_bytes((&sig_bytes).into())
         .map_err(|e| SignerError::InvalidSignature(format!("invalid sig: {e}")))?;
-    let rid = RecoveryId::new(recovery_id & 1 != 0, false);
+    let rid = RecoveryId::new(recovery_id != 0, false);
     let key = VerifyingKey::recover_from_prehash(hash, &sig, rid)
         .map_err(|e| SignerError::InvalidSignature(format!("ecrecover: {e}")))?;
 
