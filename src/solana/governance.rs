@@ -166,8 +166,6 @@ pub fn deposit_governing_tokens(
     let mut data = vec![IX_DEPOSIT_GOVERNING_TOKENS];
     data.extend_from_slice(&amount.to_le_bytes());
 
-
-
     Instruction {
         program_id: *program_id,
         accounts: vec![
@@ -270,8 +268,6 @@ pub fn cast_vote(
 ) -> Instruction {
     let mut data = vec![IX_CAST_VOTE];
     data.extend_from_slice(&vote.to_bytes());
-
-
 
     Instruction {
         program_id: *program_id,
@@ -392,8 +388,13 @@ mod tests {
     #[test]
     fn test_create_realm_instruction_index() {
         let ix = create_realm(
-            &GOVERNANCE_PROGRAM_ID, &AUTHORITY, &MINT, &PAYER,
-            &REALM, "Test Realm", 1_000_000,
+            &GOVERNANCE_PROGRAM_ID,
+            &AUTHORITY,
+            &MINT,
+            &PAYER,
+            &REALM,
+            "Test Realm",
+            1_000_000,
         );
         assert_eq!(ix.data[0], IX_CREATE_REALM);
     }
@@ -401,8 +402,13 @@ mod tests {
     #[test]
     fn test_create_realm_name_encoded() {
         let ix = create_realm(
-            &GOVERNANCE_PROGRAM_ID, &AUTHORITY, &MINT, &PAYER,
-            &REALM, "MyDAO", 1_000,
+            &GOVERNANCE_PROGRAM_ID,
+            &AUTHORITY,
+            &MINT,
+            &PAYER,
+            &REALM,
+            "MyDAO",
+            1_000,
         );
         let name_len = u32::from_le_bytes([ix.data[1], ix.data[2], ix.data[3], ix.data[4]]);
         assert_eq!(name_len, 5);
@@ -412,8 +418,13 @@ mod tests {
     #[test]
     fn test_create_realm_accounts() {
         let ix = create_realm(
-            &GOVERNANCE_PROGRAM_ID, &AUTHORITY, &MINT, &PAYER,
-            &REALM, "Test", 1_000,
+            &GOVERNANCE_PROGRAM_ID,
+            &AUTHORITY,
+            &MINT,
+            &PAYER,
+            &REALM,
+            "Test",
+            1_000,
         );
         assert_eq!(ix.accounts.len(), 7);
         assert!(ix.accounts[0].is_writable); // realm account
@@ -424,8 +435,14 @@ mod tests {
     #[test]
     fn test_deposit_instruction_index() {
         let ix = deposit_governing_tokens(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &SOURCE,
-            &AUTHORITY, &MINT, &PAYER, &TOKEN_RECORD, 1_000_000,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &SOURCE,
+            &AUTHORITY,
+            &MINT,
+            &PAYER,
+            &TOKEN_RECORD,
+            1_000_000,
         );
         assert_eq!(ix.data[0], IX_DEPOSIT_GOVERNING_TOKENS);
     }
@@ -433,12 +450,18 @@ mod tests {
     #[test]
     fn test_deposit_amount_encoded() {
         let ix = deposit_governing_tokens(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &SOURCE,
-            &AUTHORITY, &MINT, &PAYER, &TOKEN_RECORD, 42,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &SOURCE,
+            &AUTHORITY,
+            &MINT,
+            &PAYER,
+            &TOKEN_RECORD,
+            42,
         );
         let amount = u64::from_le_bytes([
-            ix.data[1], ix.data[2], ix.data[3], ix.data[4],
-            ix.data[5], ix.data[6], ix.data[7], ix.data[8],
+            ix.data[1], ix.data[2], ix.data[3], ix.data[4], ix.data[5], ix.data[6], ix.data[7],
+            ix.data[8],
         ]);
         assert_eq!(amount, 42);
     }
@@ -448,9 +471,14 @@ mod tests {
     #[test]
     fn test_create_proposal_instruction_index() {
         let ix = create_proposal(
-            &GOVERNANCE_PROGRAM_ID, &GOVERNANCE, &PROPOSAL,
-            &TOKEN_RECORD, &PAYER, &AUTHORITY,
-            "Upgrade Program", "https://link",
+            &GOVERNANCE_PROGRAM_ID,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &PAYER,
+            &AUTHORITY,
+            "Upgrade Program",
+            "https://link",
         );
         assert_eq!(ix.data[0], IX_CREATE_PROPOSAL);
     }
@@ -459,9 +487,14 @@ mod tests {
     fn test_create_proposal_name_encoded() {
         let name = "My Proposal";
         let ix = create_proposal(
-            &GOVERNANCE_PROGRAM_ID, &GOVERNANCE, &PROPOSAL,
-            &TOKEN_RECORD, &PAYER, &AUTHORITY,
-            name, "desc",
+            &GOVERNANCE_PROGRAM_ID,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &PAYER,
+            &AUTHORITY,
+            name,
+            "desc",
         );
         let len = u32::from_le_bytes([ix.data[1], ix.data[2], ix.data[3], ix.data[4]]);
         assert_eq!(len, name.len() as u32);
@@ -470,9 +503,14 @@ mod tests {
     #[test]
     fn test_create_proposal_accounts() {
         let ix = create_proposal(
-            &GOVERNANCE_PROGRAM_ID, &GOVERNANCE, &PROPOSAL,
-            &TOKEN_RECORD, &PAYER, &AUTHORITY,
-            "Test", "desc",
+            &GOVERNANCE_PROGRAM_ID,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &PAYER,
+            &AUTHORITY,
+            "Test",
+            "desc",
         );
         assert_eq!(ix.accounts.len(), 8);
     }
@@ -482,8 +520,11 @@ mod tests {
     #[test]
     fn test_sign_off_instruction_index() {
         let ix = sign_off_proposal(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &SIGNATORY,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &SIGNATORY,
         );
         assert_eq!(ix.data[0], IX_SIGN_OFF_PROPOSAL);
     }
@@ -491,8 +532,11 @@ mod tests {
     #[test]
     fn test_sign_off_accounts() {
         let ix = sign_off_proposal(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &SIGNATORY,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &SIGNATORY,
         );
         assert_eq!(ix.accounts.len(), 4);
         assert!(ix.accounts[2].is_writable); // proposal
@@ -503,9 +547,15 @@ mod tests {
     #[test]
     fn test_cast_vote_approve() {
         let ix = cast_vote(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            &[10; 32], Vote::Approve,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
+            &PAYER,
+            &[10; 32],
+            Vote::Approve,
         );
         assert_eq!(ix.data[0], IX_CAST_VOTE);
         assert_eq!(ix.data[1], 0); // Approve
@@ -514,9 +564,15 @@ mod tests {
     #[test]
     fn test_cast_vote_deny() {
         let ix = cast_vote(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            &[10; 32], Vote::Deny,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
+            &PAYER,
+            &[10; 32],
+            Vote::Deny,
         );
         assert_eq!(ix.data[1], 1);
     }
@@ -524,9 +580,15 @@ mod tests {
     #[test]
     fn test_cast_vote_abstain() {
         let ix = cast_vote(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            &[10; 32], Vote::Abstain,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
+            &PAYER,
+            &[10; 32],
+            Vote::Abstain,
         );
         assert_eq!(ix.data[1], 2);
     }
@@ -534,9 +596,15 @@ mod tests {
     #[test]
     fn test_cast_vote_veto() {
         let ix = cast_vote(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            &[10; 32], Vote::Veto,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
+            &PAYER,
+            &[10; 32],
+            Vote::Veto,
         );
         assert_eq!(ix.data[1], 3);
     }
@@ -544,9 +612,15 @@ mod tests {
     #[test]
     fn test_cast_vote_accounts() {
         let ix = cast_vote(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            &[10; 32], Vote::Approve,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
+            &PAYER,
+            &[10; 32],
+            Vote::Approve,
         );
         assert_eq!(ix.accounts.len(), 10);
     }
@@ -556,8 +630,12 @@ mod tests {
     #[test]
     fn test_cancel_proposal_instruction_index() {
         let ix = cancel_proposal(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
         );
         assert_eq!(ix.data[0], IX_CANCEL_PROPOSAL);
     }
@@ -565,8 +643,12 @@ mod tests {
     #[test]
     fn test_cancel_proposal_accounts() {
         let ix = cancel_proposal(
-            &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
-            &PROPOSAL, &TOKEN_RECORD, &AUTHORITY,
+            &GOVERNANCE_PROGRAM_ID,
+            &REALM,
+            &GOVERNANCE,
+            &PROPOSAL,
+            &TOKEN_RECORD,
+            &AUTHORITY,
         );
         assert_eq!(ix.accounts.len(), 6);
     }
@@ -575,10 +657,7 @@ mod tests {
 
     #[test]
     fn test_execute_transaction_instruction_index() {
-        let ix = execute_transaction(
-            &GOVERNANCE_PROGRAM_ID, &GOVERNANCE,
-            &PROPOSAL, &[10; 32],
-        );
+        let ix = execute_transaction(&GOVERNANCE_PROGRAM_ID, &GOVERNANCE, &PROPOSAL, &[10; 32]);
         assert_eq!(ix.data[0], IX_EXECUTE_TRANSACTION);
     }
 
@@ -588,7 +667,9 @@ mod tests {
     fn test_set_delegate_with_delegate() {
         let delegate = [0xDD; 32];
         let ix = set_governance_delegate(
-            &GOVERNANCE_PROGRAM_ID, &TOKEN_RECORD, &AUTHORITY,
+            &GOVERNANCE_PROGRAM_ID,
+            &TOKEN_RECORD,
+            &AUTHORITY,
             Some(&delegate),
         );
         assert_eq!(ix.data[0], IX_SET_GOVERNANCE_DELEGATE);
@@ -598,10 +679,7 @@ mod tests {
 
     #[test]
     fn test_set_delegate_none() {
-        let ix = set_governance_delegate(
-            &GOVERNANCE_PROGRAM_ID, &TOKEN_RECORD, &AUTHORITY,
-            None,
-        );
+        let ix = set_governance_delegate(&GOVERNANCE_PROGRAM_ID, &TOKEN_RECORD, &AUTHORITY, None);
         assert_eq!(ix.data[1], 0); // None
         assert_eq!(ix.data.len(), 2);
     }

@@ -1035,8 +1035,11 @@ mod tests {
     fn test_bip32_vector1_chain_m_0h_1() {
         let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, true).unwrap()   // m/0'
-                 .derive_child(1, false).unwrap();  // m/0'/1
+        let c = m
+            .derive_child(0, true)
+            .unwrap() // m/0'
+            .derive_child(1, false)
+            .unwrap(); // m/0'/1
         assert_eq!(
             &*c.to_xprv(),
             "xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9BmLnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs"
@@ -1050,9 +1053,13 @@ mod tests {
     fn test_bip32_vector1_chain_m_0h_1_2h() {
         let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, true).unwrap()
-                 .derive_child(1, false).unwrap()
-                 .derive_child(2, true).unwrap();   // m/0'/1/2'
+        let c = m
+            .derive_child(0, true)
+            .unwrap()
+            .derive_child(1, false)
+            .unwrap()
+            .derive_child(2, true)
+            .unwrap(); // m/0'/1/2'
         assert_eq!(
             &*c.to_xprv(),
             "xprv9z4pot5VBttmtdRTWfWQmoH1taj2axGVzFqSb8C9xaxKymcFzXBDptWmT7FwuEzG3ryjH4ktypQSAewRiNMjANTtpgP4mLTj34bhnZX7UiM"
@@ -1067,10 +1074,15 @@ mod tests {
     fn test_bip32_vector1_chain_m_0h_1_2h_2() {
         let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, true).unwrap()
-                 .derive_child(1, false).unwrap()
-                 .derive_child(2, true).unwrap()
-                 .derive_child(2, false).unwrap();  // m/0'/1/2'/2
+        let c = m
+            .derive_child(0, true)
+            .unwrap()
+            .derive_child(1, false)
+            .unwrap()
+            .derive_child(2, true)
+            .unwrap()
+            .derive_child(2, false)
+            .unwrap(); // m/0'/1/2'/2
         assert_eq!(
             &*c.to_xprv(),
             "xprvA2JDeKCSNNZky6uBCviVfJSKyQ1mDYahRjijr5idH2WwLsEd4Hsb2Tyh8RfQMuPh7f7RtyzTtdrbdqqsunu5Mm3wDvUAKRHSC34sJ7in334"
@@ -1082,11 +1094,17 @@ mod tests {
     fn test_bip32_vector1_chain_m_0h_1_2h_2_1000000000() {
         let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, true).unwrap()
-                 .derive_child(1, false).unwrap()
-                 .derive_child(2, true).unwrap()
-                 .derive_child(2, false).unwrap()
-                 .derive_child(1_000_000_000, false).unwrap(); // m/0'/1/2'/2/1000000000
+        let c = m
+            .derive_child(0, true)
+            .unwrap()
+            .derive_child(1, false)
+            .unwrap()
+            .derive_child(2, true)
+            .unwrap()
+            .derive_child(2, false)
+            .unwrap()
+            .derive_child(1_000_000_000, false)
+            .unwrap(); // m/0'/1/2'/2/1000000000
         assert_eq!(
             &*c.to_xprv(),
             "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76"
@@ -1104,8 +1122,11 @@ mod tests {
             "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
         ).unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, false).unwrap()
-                 .derive_child(2_147_483_647, true).unwrap(); // m/0/2147483647'
+        let c = m
+            .derive_child(0, false)
+            .unwrap()
+            .derive_child(2_147_483_647, true)
+            .unwrap(); // m/0/2147483647'
         assert_eq!(
             &*c.to_xprv(),
             "xprv9wSp6B7kry3Vj9m1zSnLvN3xH8RdsPP1Mh7fAaR7aRLcQMKTR2vidYEeEg2mUCTAwCd6vnxVrcjfy2kRgVsFawNzmjuHc2YmYRmagcEPdU9"
@@ -1118,9 +1139,13 @@ mod tests {
             "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
         ).unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, false).unwrap()
-                 .derive_child(2_147_483_647, true).unwrap()
-                 .derive_child(1, false).unwrap(); // m/0/2147483647'/1
+        let c = m
+            .derive_child(0, false)
+            .unwrap()
+            .derive_child(2_147_483_647, true)
+            .unwrap()
+            .derive_child(1, false)
+            .unwrap(); // m/0/2147483647'/1
         assert_eq!(
             &*c.to_xprv(),
             // spec: xprv9zFnWC6h2cLgpmSA46vutJzBcfJ8yaJGg8cX1e5StJh45BBciYTRXSd25UEPVuesF9yog62tGAQtHjXajPPdbRCHuWS6T8XA2ECKADdw4Ef
@@ -1134,11 +1159,17 @@ mod tests {
             "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
         ).unwrap();
         let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
-        let c = m.derive_child(0, false).unwrap()
-                 .derive_child(2_147_483_647, true).unwrap()
-                 .derive_child(1, false).unwrap()
-                 .derive_child(2_147_483_646, true).unwrap()
-                 .derive_child(2, false).unwrap(); // m/0/2147483647'/1/2147483646'/2
+        let c = m
+            .derive_child(0, false)
+            .unwrap()
+            .derive_child(2_147_483_647, true)
+            .unwrap()
+            .derive_child(1, false)
+            .unwrap()
+            .derive_child(2_147_483_646, true)
+            .unwrap()
+            .derive_child(2, false)
+            .unwrap(); // m/0/2147483647'/1/2147483646'/2
         assert_eq!(
             &*c.to_xprv(),
             "xprvA2nrNbFZABcdryreWet9Ea4LvTJcGsqrMzxHx98MMrotbir7yrKCEXw7nadnHM8Dq38EGfSh6dqA9QWTyefMLEcBYJUuekgW4BYPJcr9E7j"

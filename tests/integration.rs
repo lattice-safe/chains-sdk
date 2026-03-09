@@ -698,9 +698,10 @@ mod eip2333_integration {
         let msg = b"beacon chain attestation";
         let sig = signer.sign(msg).unwrap();
 
-        let verifier =
-            chains_sdk::ethereum::bls::BlsVerifier::from_public_key_bytes(&Signer::public_key_bytes(&signer))
-                .unwrap();
+        let verifier = chains_sdk::ethereum::bls::BlsVerifier::from_public_key_bytes(
+            &Signer::public_key_bytes(&signer),
+        )
+        .unwrap();
         assert!(verifier.verify(msg, &sig).unwrap());
     }
 

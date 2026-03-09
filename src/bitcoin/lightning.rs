@@ -419,14 +419,14 @@ mod tests {
     fn test_anchor_script_byte_level() {
         let script = anchor_script(&PK1);
         // Exact byte sequence: PUSH33 <pk> OP_CHECKSIG OP_IFDUP OP_NOTIF OP_16 OP_CSV OP_ENDIF
-        assert_eq!(script[0], 33);                 // push length
-        assert_eq!(&script[1..34], &PK1[..]);      // pubkey
-        assert_eq!(script[34], 0xAC);              // OP_CHECKSIG
-        assert_eq!(script[35], 0x73);              // OP_IFDUP
-        assert_eq!(script[36], 0x64);              // OP_NOTIF
-        assert_eq!(script[37], 0x60);              // OP_16
-        assert_eq!(script[38], 0xB2);              // OP_CSV
-        assert_eq!(script[39], 0x68);              // OP_ENDIF
+        assert_eq!(script[0], 33); // push length
+        assert_eq!(&script[1..34], &PK1[..]); // pubkey
+        assert_eq!(script[34], 0xAC); // OP_CHECKSIG
+        assert_eq!(script[35], 0x73); // OP_IFDUP
+        assert_eq!(script[36], 0x64); // OP_NOTIF
+        assert_eq!(script[37], 0x60); // OP_16
+        assert_eq!(script[38], 0xB2); // OP_CSV
+        assert_eq!(script[39], 0x68); // OP_ENDIF
         assert_eq!(script.len(), 40);
     }
 
@@ -477,10 +477,10 @@ mod tests {
         // OP_ELSE
         assert_eq!(script[35], 0x67);
         // CSV delay encoding for 144 (=0x90, needs sign byte: 02 90 00)
-        assert_eq!(script[36], 2);     // 2 bytes
+        assert_eq!(script[36], 2); // 2 bytes
         assert_eq!(script[37], 0x90);
-        assert_eq!(script[38], 0x00);  // sign extension
-        // OP_CSV OP_DROP
+        assert_eq!(script[38], 0x00); // sign extension
+                                      // OP_CSV OP_DROP
         assert_eq!(script[39], 0xB2);
         assert_eq!(script[40], 0x75);
         // PUSH33 <local_delayed_key>
@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(script[0], 0x76);
         assert_eq!(script[1], 0xA9);
         assert_eq!(script[2], 0x14); // push 20 bytes
-        // 20 bytes of hash160
+                                     // 20 bytes of hash160
         assert_eq!(script[23], 0x88);
         assert_eq!(script[24], 0xAC);
         assert_eq!(script.len(), 25);
@@ -706,13 +706,13 @@ mod tests {
     fn test_funding_script_byte_level() {
         let script = funding_script(&PK1, &PK2);
         // PK1 < PK2 lexicographically (0x02 < 0x03)
-        assert_eq!(script[0], 0x52);              // OP_2
-        assert_eq!(script[1], 33);                 // push length
-        assert_eq!(&script[2..35], &PK1[..]);      // first key (smaller)
+        assert_eq!(script[0], 0x52); // OP_2
+        assert_eq!(script[1], 33); // push length
+        assert_eq!(&script[2..35], &PK1[..]); // first key (smaller)
         assert_eq!(script[35], 33);
-        assert_eq!(&script[36..69], &PK2[..]);     // second key (larger)
-        assert_eq!(script[69], 0x52);              // OP_2
-        assert_eq!(script[70], 0xAE);              // OP_CHECKMULTISIG
+        assert_eq!(&script[36..69], &PK2[..]); // second key (larger)
+        assert_eq!(script[69], 0x52); // OP_2
+        assert_eq!(script[70], 0xAE); // OP_CHECKMULTISIG
     }
 
     #[test]

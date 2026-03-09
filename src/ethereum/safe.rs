@@ -168,8 +168,7 @@ impl SafeTransaction {
 /// `keccak256("EIP712Domain(uint256 chainId,address verifyingContract)")`
 #[must_use]
 pub fn safe_domain_separator(chain_id: u64, safe_address: &[u8; 20]) -> [u8; 32] {
-    let domain_type_hash =
-        keccak256(b"EIP712Domain(uint256 chainId,address verifyingContract)");
+    let domain_type_hash = keccak256(b"EIP712Domain(uint256 chainId,address verifyingContract)");
     let mut buf = Vec::with_capacity(3 * 32);
     buf.extend_from_slice(&domain_type_hash);
     buf.extend_from_slice(&pad_u64(chain_id));
@@ -226,10 +225,7 @@ pub fn decode_signatures(data: &[u8]) -> Result<Vec<super::EthereumSignature>, S
 #[must_use]
 pub fn encode_add_owner(owner: [u8; 20], threshold: u64) -> Vec<u8> {
     let func = abi::Function::new("addOwnerWithThreshold(address,uint256)");
-    func.encode(&[
-        AbiValue::Address(owner),
-        AbiValue::from_u64(threshold),
-    ])
+    func.encode(&[AbiValue::Address(owner), AbiValue::from_u64(threshold)])
 }
 
 /// ABI-encode `removeOwner(address prevOwner, address owner, uint256 threshold)`.
@@ -255,7 +251,11 @@ pub fn encode_change_threshold(threshold: u64) -> Vec<u8> {
 
 /// ABI-encode `swapOwner(address prevOwner, address oldOwner, address newOwner)`.
 #[must_use]
-pub fn encode_swap_owner(prev_owner: [u8; 20], old_owner: [u8; 20], new_owner: [u8; 20]) -> Vec<u8> {
+pub fn encode_swap_owner(
+    prev_owner: [u8; 20],
+    old_owner: [u8; 20],
+    new_owner: [u8; 20],
+) -> Vec<u8> {
     let func = abi::Function::new("swapOwner(address,address,address)");
     func.encode(&[
         AbiValue::Address(prev_owner),
@@ -275,10 +275,7 @@ pub fn encode_enable_module(module: [u8; 20]) -> Vec<u8> {
 #[must_use]
 pub fn encode_disable_module(prev_module: [u8; 20], module: [u8; 20]) -> Vec<u8> {
     let func = abi::Function::new("disableModule(address,address)");
-    func.encode(&[
-        AbiValue::Address(prev_module),
-        AbiValue::Address(module),
-    ])
+    func.encode(&[AbiValue::Address(prev_module), AbiValue::Address(module)])
 }
 
 /// ABI-encode `setGuard(address guard)`.
@@ -507,9 +504,8 @@ pub fn encode_exec_from_module_return_data(
     data: &[u8],
     operation: Operation,
 ) -> Vec<u8> {
-    let func = abi::Function::new(
-        "execTransactionFromModuleReturnData(address,uint256,bytes,uint8)",
-    );
+    let func =
+        abi::Function::new("execTransactionFromModuleReturnData(address,uint256,bytes,uint8)");
     func.encode(&[
         AbiValue::Address(to),
         AbiValue::Uint256(*value),
@@ -547,10 +543,7 @@ pub fn encode_is_module_enabled(module: [u8; 20]) -> Vec<u8> {
 #[must_use]
 pub fn encode_get_modules_paginated(start: [u8; 20], page_size: u64) -> Vec<u8> {
     let func = abi::Function::new("getModulesPaginated(address,uint256)");
-    func.encode(&[
-        AbiValue::Address(start),
-        AbiValue::from_u64(page_size),
-    ])
+    func.encode(&[AbiValue::Address(start), AbiValue::from_u64(page_size)])
 }
 
 // ─── Safe Deployment ───────────────────────────────────────────────
@@ -867,7 +860,9 @@ mod tests {
     #[test]
     fn test_encode_signatures_single() {
         let sig = super::super::EthereumSignature {
-            r: [0xAA; 32], s: [0xBB; 32], v: 27,
+            r: [0xAA; 32],
+            s: [0xBB; 32],
+            v: 27,
         };
         let packed = encode_signatures(&[sig]);
         assert_eq!(packed.len(), 65);
@@ -879,10 +874,14 @@ mod tests {
     #[test]
     fn test_encode_signatures_multiple() {
         let sig1 = super::super::EthereumSignature {
-            r: [0x11; 32], s: [0x22; 32], v: 27,
+            r: [0x11; 32],
+            s: [0x22; 32],
+            v: 27,
         };
         let sig2 = super::super::EthereumSignature {
-            r: [0x33; 32], s: [0x44; 32], v: 28,
+            r: [0x33; 32],
+            s: [0x44; 32],
+            v: 28,
         };
         let packed = encode_signatures(&[sig1, sig2]);
         assert_eq!(packed.len(), 130);
@@ -895,10 +894,14 @@ mod tests {
     #[test]
     fn test_decode_signatures_roundtrip() {
         let sig1 = super::super::EthereumSignature {
-            r: [0xAA; 32], s: [0xBB; 32], v: 27,
+            r: [0xAA; 32],
+            s: [0xBB; 32],
+            v: 27,
         };
         let sig2 = super::super::EthereumSignature {
-            r: [0xCC; 32], s: [0xDD; 32], v: 28,
+            r: [0xCC; 32],
+            s: [0xDD; 32],
+            v: 28,
         };
         let packed = encode_signatures(&[sig1.clone(), sig2.clone()]);
         let decoded = decode_signatures(&packed).unwrap();
@@ -925,7 +928,9 @@ mod tests {
     fn test_exec_transaction_has_correct_selector() {
         let tx = zero_tx();
         let sig = super::super::EthereumSignature {
-            r: [0xAA; 32], s: [0xBB; 32], v: 27,
+            r: [0xAA; 32],
+            s: [0xBB; 32],
+            v: 27,
         };
         let calldata = tx.encode_exec_transaction(&[sig]);
         let expected_selector = abi::function_selector(
@@ -938,7 +943,9 @@ mod tests {
     fn test_exec_transaction_includes_signature_data() {
         let tx = zero_tx();
         let sig = super::super::EthereumSignature {
-            r: [0xAA; 32], s: [0xBB; 32], v: 27,
+            r: [0xAA; 32],
+            s: [0xBB; 32],
+            v: 27,
         };
         let calldata = tx.encode_exec_transaction(&[sig]);
         assert!(calldata.len() > 4 + 10 * 32);
@@ -987,28 +994,24 @@ mod tests {
 
     #[test]
     fn test_encode_exec_from_module_selector() {
-        let calldata = encode_exec_from_module(
-            [0xBB; 20], &[0u8; 32], &[0xDE, 0xAD], Operation::Call,
-        );
-        let expected = abi::function_selector(
-            "execTransactionFromModule(address,uint256,bytes,uint8)",
-        );
+        let calldata =
+            encode_exec_from_module([0xBB; 20], &[0u8; 32], &[0xDE, 0xAD], Operation::Call);
+        let expected =
+            abi::function_selector("execTransactionFromModule(address,uint256,bytes,uint8)");
         assert_eq!(&calldata[..4], &expected);
     }
 
     #[test]
     fn test_encode_exec_from_module_delegate_call() {
-        let calldata = encode_exec_from_module(
-            [0xBB; 20], &[0u8; 32], &[], Operation::DelegateCall,
-        );
+        let calldata =
+            encode_exec_from_module([0xBB; 20], &[0u8; 32], &[], Operation::DelegateCall);
         assert!(calldata.len() > 4);
     }
 
     #[test]
     fn test_encode_exec_from_module_return_data_selector() {
-        let calldata = encode_exec_from_module_return_data(
-            [0xBB; 20], &[0u8; 32], &[], Operation::Call,
-        );
+        let calldata =
+            encode_exec_from_module_return_data([0xBB; 20], &[0u8; 32], &[], Operation::Call);
         let expected = abi::function_selector(
             "execTransactionFromModuleReturnData(address,uint256,bytes,uint8)",
         );

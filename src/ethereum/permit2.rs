@@ -28,8 +28,7 @@ use crate::ethereum::keccak256;
 
 /// Uniswap Permit2 contract address (same on all chains).
 pub const PERMIT2_ADDRESS: [u8; 20] = [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0xd4, 0x73,
-    0x03, 0x0f, 0x11, 0x6d, 0xde, 0xe9, 0xf6, 0xb4,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0xd4, 0x73, 0x03, 0x0f, 0x11, 0x6d, 0xde, 0xe9, 0xf6, 0xb4,
     0x3a, 0xc7, 0x8b, 0xa3,
 ];
 
@@ -289,9 +288,8 @@ impl PermitBatchTransferFrom {
 /// `keccak256(abi.encode(EIP712_DOMAIN_TYPEHASH, name_hash, chain_id, permit2_address))`
 #[must_use]
 pub fn permit2_domain_separator(chain_id: u64) -> [u8; 32] {
-    let type_hash = keccak256(
-        b"EIP712Domain(string name,uint256 chainId,address verifyingContract)",
-    );
+    let type_hash =
+        keccak256(b"EIP712Domain(string name,uint256 chainId,address verifyingContract)");
     let name_hash = keccak256(b"Permit2");
 
     let mut data = Vec::with_capacity(128);
@@ -316,9 +314,8 @@ pub fn encode_permit_single_call(
     signature: &[u8],
 ) -> Vec<u8> {
     use crate::ethereum::abi::{AbiValue, Function};
-    let func = Function::new(
-        "permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)",
-    );
+    let func =
+        Function::new("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)");
     func.encode(&[
         AbiValue::Address(*owner),
         AbiValue::Tuple(vec![
@@ -356,7 +353,6 @@ pub fn encode_transfer_from(
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
-
 
 fn pad_address(addr: &[u8; 20]) -> [u8; 32] {
     let mut buf = [0u8; 32];
@@ -406,8 +402,12 @@ mod tests {
     #[test]
     fn test_permit_single_struct_hash_deterministic() {
         let p = PermitSingle {
-            token: TOKEN_A, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         assert_eq!(p.struct_hash(), p.struct_hash());
     }
@@ -415,12 +415,20 @@ mod tests {
     #[test]
     fn test_permit_single_different_amounts() {
         let p1 = PermitSingle {
-            token: TOKEN_A, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let p2 = PermitSingle {
-            token: TOKEN_A, amount: 2000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 2000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         assert_ne!(p1.struct_hash(), p2.struct_hash());
     }
@@ -428,12 +436,20 @@ mod tests {
     #[test]
     fn test_permit_single_different_tokens() {
         let p1 = PermitSingle {
-            token: TOKEN_A, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let p2 = PermitSingle {
-            token: TOKEN_B, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_B,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         assert_ne!(p1.struct_hash(), p2.struct_hash());
     }
@@ -441,8 +457,12 @@ mod tests {
     #[test]
     fn test_permit_single_signing_hash() {
         let p = PermitSingle {
-            token: TOKEN_A, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let ds = permit2_domain_separator(1);
         let hash = p.signing_hash(&ds);
@@ -453,8 +473,12 @@ mod tests {
     #[test]
     fn test_permit_single_different_chains() {
         let p = PermitSingle {
-            token: TOKEN_A, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let h1 = p.signing_hash(&permit2_domain_separator(1));
         let h2 = p.signing_hash(&permit2_domain_separator(137));
@@ -467,8 +491,18 @@ mod tests {
     fn test_permit_batch_struct_hash() {
         let p = PermitBatch {
             details: vec![
-                PermitDetails { token: TOKEN_A, amount: 100, expiration: DEADLINE, nonce: 0 },
-                PermitDetails { token: TOKEN_B, amount: 200, expiration: DEADLINE, nonce: 1 },
+                PermitDetails {
+                    token: TOKEN_A,
+                    amount: 100,
+                    expiration: DEADLINE,
+                    nonce: 0,
+                },
+                PermitDetails {
+                    token: TOKEN_B,
+                    amount: 200,
+                    expiration: DEADLINE,
+                    nonce: 1,
+                },
             ],
             spender: SPENDER,
             sig_deadline: DEADLINE,
@@ -479,13 +513,20 @@ mod tests {
     #[test]
     fn test_permit_batch_different_from_single() {
         let single = PermitSingle {
-            token: TOKEN_A, amount: 100, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 100,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let batch = PermitBatch {
-            details: vec![
-                PermitDetails { token: TOKEN_A, amount: 100, expiration: DEADLINE, nonce: 0 },
-            ],
+            details: vec![PermitDetails {
+                token: TOKEN_A,
+                amount: 100,
+                expiration: DEADLINE,
+                nonce: 0,
+            }],
             spender: SPENDER,
             sig_deadline: DEADLINE,
         };
@@ -496,17 +537,39 @@ mod tests {
     fn test_permit_batch_order_matters() {
         let p1 = PermitBatch {
             details: vec![
-                PermitDetails { token: TOKEN_A, amount: 100, expiration: DEADLINE, nonce: 0 },
-                PermitDetails { token: TOKEN_B, amount: 200, expiration: DEADLINE, nonce: 1 },
+                PermitDetails {
+                    token: TOKEN_A,
+                    amount: 100,
+                    expiration: DEADLINE,
+                    nonce: 0,
+                },
+                PermitDetails {
+                    token: TOKEN_B,
+                    amount: 200,
+                    expiration: DEADLINE,
+                    nonce: 1,
+                },
             ],
-            spender: SPENDER, sig_deadline: DEADLINE,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let p2 = PermitBatch {
             details: vec![
-                PermitDetails { token: TOKEN_B, amount: 200, expiration: DEADLINE, nonce: 1 },
-                PermitDetails { token: TOKEN_A, amount: 100, expiration: DEADLINE, nonce: 0 },
+                PermitDetails {
+                    token: TOKEN_B,
+                    amount: 200,
+                    expiration: DEADLINE,
+                    nonce: 1,
+                },
+                PermitDetails {
+                    token: TOKEN_A,
+                    amount: 100,
+                    expiration: DEADLINE,
+                    nonce: 0,
+                },
             ],
-            spender: SPENDER, sig_deadline: DEADLINE,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         assert_ne!(p1.struct_hash(), p2.struct_hash());
     }
@@ -516,8 +579,11 @@ mod tests {
     #[test]
     fn test_permit_transfer_struct_hash() {
         let p = PermitTransferFrom {
-            token: TOKEN_A, amount: 5000, nonce: 42,
-            deadline: DEADLINE, spender: SPENDER,
+            token: TOKEN_A,
+            amount: 5000,
+            nonce: 42,
+            deadline: DEADLINE,
+            spender: SPENDER,
         };
         assert_ne!(p.struct_hash(), [0u8; 32]);
     }
@@ -525,12 +591,18 @@ mod tests {
     #[test]
     fn test_permit_transfer_different_nonces() {
         let p1 = PermitTransferFrom {
-            token: TOKEN_A, amount: 5000, nonce: 0,
-            deadline: DEADLINE, spender: SPENDER,
+            token: TOKEN_A,
+            amount: 5000,
+            nonce: 0,
+            deadline: DEADLINE,
+            spender: SPENDER,
         };
         let p2 = PermitTransferFrom {
-            token: TOKEN_A, amount: 5000, nonce: 1,
-            deadline: DEADLINE, spender: SPENDER,
+            token: TOKEN_A,
+            amount: 5000,
+            nonce: 1,
+            deadline: DEADLINE,
+            spender: SPENDER,
         };
         assert_ne!(p1.struct_hash(), p2.struct_hash());
     }
@@ -538,8 +610,11 @@ mod tests {
     #[test]
     fn test_permit_transfer_signing_hash() {
         let p = PermitTransferFrom {
-            token: TOKEN_A, amount: 5000, nonce: 0,
-            deadline: DEADLINE, spender: SPENDER,
+            token: TOKEN_A,
+            amount: 5000,
+            nonce: 0,
+            deadline: DEADLINE,
+            spender: SPENDER,
         };
         let ds = permit2_domain_separator(1);
         let hash = p.signing_hash(&ds);
@@ -552,10 +627,18 @@ mod tests {
     fn test_permit_batch_transfer_struct_hash() {
         let p = PermitBatchTransferFrom {
             permitted: vec![
-                TokenPermissions { token: TOKEN_A, amount: 100 },
-                TokenPermissions { token: TOKEN_B, amount: 200 },
+                TokenPermissions {
+                    token: TOKEN_A,
+                    amount: 100,
+                },
+                TokenPermissions {
+                    token: TOKEN_B,
+                    amount: 200,
+                },
             ],
-            nonce: 0, deadline: DEADLINE, spender: SPENDER,
+            nonce: 0,
+            deadline: DEADLINE,
+            spender: SPENDER,
         };
         assert_ne!(p.struct_hash(), [0u8; 32]);
     }
@@ -563,8 +646,13 @@ mod tests {
     #[test]
     fn test_permit_batch_transfer_signing_hash() {
         let p = PermitBatchTransferFrom {
-            permitted: vec![TokenPermissions { token: TOKEN_A, amount: 100 }],
-            nonce: 0, deadline: DEADLINE, spender: SPENDER,
+            permitted: vec![TokenPermissions {
+                token: TOKEN_A,
+                amount: 100,
+            }],
+            nonce: 0,
+            deadline: DEADLINE,
+            spender: SPENDER,
         };
         let hash = p.signing_hash(&permit2_domain_separator(1));
         assert_ne!(hash, [0u8; 32]);
@@ -592,8 +680,12 @@ mod tests {
     #[test]
     fn test_encode_permit_single_call_selector() {
         let p = PermitSingle {
-            token: TOKEN_A, amount: 1000, expiration: DEADLINE,
-            nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
+            token: TOKEN_A,
+            amount: 1000,
+            expiration: DEADLINE,
+            nonce: 0,
+            spender: SPENDER,
+            sig_deadline: DEADLINE,
         };
         let data = encode_permit_single_call(&OWNER, &p, &[0xAA; 65]);
         assert!(data.len() > 4);
@@ -652,7 +744,10 @@ mod tests {
 
     #[test]
     fn test_permit2_address_hex() {
-        let hex = PERMIT2_ADDRESS.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let hex = PERMIT2_ADDRESS
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         assert_eq!(hex, "000000000022d473030f116ddee9f6b43ac78ba3");
     }
 }

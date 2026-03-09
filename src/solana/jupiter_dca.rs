@@ -150,12 +150,18 @@ impl DcaParams {
         data.extend_from_slice(&self.max_out_amount_per_cycle.to_le_bytes());
         // Option<u64> start_at
         match self.start_at {
-            Some(ts) => { data.push(1); data.extend_from_slice(&ts.to_le_bytes()); }
+            Some(ts) => {
+                data.push(1);
+                data.extend_from_slice(&ts.to_le_bytes());
+            }
             None => data.push(0),
         }
         // Option<u64> num_cycles
         match self.num_cycles {
-            Some(n) => { data.push(1); data.extend_from_slice(&n.to_le_bytes()); }
+            Some(n) => {
+                data.push(1);
+                data.extend_from_slice(&n.to_le_bytes());
+            }
             None => data.push(0),
         }
         data
@@ -364,8 +370,13 @@ mod tests {
     #[test]
     fn test_open_dca_discriminator() {
         let ix = open_dca(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &INPUT_MINT, &OUTPUT_MINT, &USER_ATA_IN, &DCA_ATA_IN,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &INPUT_MINT,
+            &OUTPUT_MINT,
+            &USER_ATA_IN,
+            &DCA_ATA_IN,
             &sample_params(),
         );
         assert_eq!(&ix.data[..8], &IX_OPEN_DCA);
@@ -374,20 +385,30 @@ mod tests {
     #[test]
     fn test_open_dca_accounts() {
         let ix = open_dca(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &INPUT_MINT, &OUTPUT_MINT, &USER_ATA_IN, &DCA_ATA_IN,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &INPUT_MINT,
+            &OUTPUT_MINT,
+            &USER_ATA_IN,
+            &DCA_ATA_IN,
             &sample_params(),
         );
         assert_eq!(ix.accounts.len(), 9);
         assert!(ix.accounts[0].is_writable); // dca account
-        assert!(ix.accounts[1].is_signer);   // user
+        assert!(ix.accounts[1].is_signer); // user
     }
 
     #[test]
     fn test_open_dca_program_id() {
         let ix = open_dca(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &INPUT_MINT, &OUTPUT_MINT, &USER_ATA_IN, &DCA_ATA_IN,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &INPUT_MINT,
+            &OUTPUT_MINT,
+            &USER_ATA_IN,
+            &DCA_ATA_IN,
             &sample_params(),
         );
         assert_eq!(ix.program_id, JUPITER_DCA_PROGRAM);
@@ -398,8 +419,13 @@ mod tests {
     #[test]
     fn test_close_dca_discriminator() {
         let ix = close_dca(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &USER_ATA_IN, &USER_ATA_OUT, &DCA_ATA_IN, &DCA_ATA_OUT,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &USER_ATA_IN,
+            &USER_ATA_OUT,
+            &DCA_ATA_IN,
+            &DCA_ATA_OUT,
         );
         assert_eq!(&ix.data[..8], &IX_CLOSE_DCA);
     }
@@ -407,8 +433,13 @@ mod tests {
     #[test]
     fn test_close_dca_accounts() {
         let ix = close_dca(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &USER_ATA_IN, &USER_ATA_OUT, &DCA_ATA_IN, &DCA_ATA_OUT,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &USER_ATA_IN,
+            &USER_ATA_OUT,
+            &DCA_ATA_IN,
+            &DCA_ATA_OUT,
         );
         assert_eq!(ix.accounts.len(), 7);
     }
@@ -418,8 +449,11 @@ mod tests {
     #[test]
     fn test_withdraw_discriminator() {
         let ix = withdraw(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &USER_ATA_OUT, &DCA_ATA_OUT,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &USER_ATA_OUT,
+            &DCA_ATA_OUT,
         );
         assert_eq!(&ix.data[..8], &IX_WITHDRAW);
     }
@@ -427,8 +461,11 @@ mod tests {
     #[test]
     fn test_withdraw_accounts() {
         let ix = withdraw(
-            &JUPITER_DCA_PROGRAM, &DCA, &USER,
-            &USER_ATA_OUT, &DCA_ATA_OUT,
+            &JUPITER_DCA_PROGRAM,
+            &DCA,
+            &USER,
+            &USER_ATA_OUT,
+            &DCA_ATA_OUT,
         );
         assert_eq!(ix.accounts.len(), 5);
     }

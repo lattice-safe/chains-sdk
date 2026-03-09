@@ -45,7 +45,7 @@ const OP_EQUALVERIFY: u8 = 0x88;
 const OP_SHA256: u8 = 0xa8;
 const OP_CHECKSIG: u8 = 0xac;
 const OP_CLTV: u8 = 0xb1; // OP_CHECKLOCKTIMEVERIFY
-const OP_CSV: u8 = 0xb2;  // OP_CHECKSEQUENCEVERIFY
+const OP_CSV: u8 = 0xb2; // OP_CHECKSEQUENCEVERIFY
 
 // ═══════════════════════════════════════════════════════════════════
 // Swap Secret
@@ -232,10 +232,7 @@ pub fn build_btc_claim_witness(
 ///
 /// Returns `[signature, OP_FALSE, redeem_script]`.
 #[must_use]
-pub fn build_btc_refund_witness(
-    signature: &[u8],
-    redeem_script: &[u8],
-) -> Vec<Vec<u8>> {
+pub fn build_btc_refund_witness(signature: &[u8], redeem_script: &[u8]) -> Vec<Vec<u8>> {
     vec![
         signature.to_vec(),
         vec![], // empty = OP_FALSE — select the ELSE branch
@@ -251,7 +248,7 @@ pub fn htlc_script_pubkey(redeem_script: &[u8]) -> Vec<u8> {
     let hash = crypto::sha256(redeem_script);
     let mut spk = Vec::with_capacity(34);
     spk.push(0x00); // witness version 0
-    spk.push(32);   // push 32 bytes
+    spk.push(32); // push 32 bytes
     spk.extend_from_slice(&hash);
     spk
 }
@@ -287,11 +284,7 @@ pub fn encode_eth_htlc_refund(hash_lock: &[u8; 32]) -> Vec<u8> {
 
 /// ABI-encode an ERC-20 HTLC `lockTokens(address token, bytes32 hashLock, uint256 timelock, address receiver, uint256 amount)`.
 #[must_use]
-pub fn encode_eth_htlc_lock_tokens(
-    token: &[u8; 20],
-    params: &HtlcParams,
-    amount: u64,
-) -> Vec<u8> {
+pub fn encode_eth_htlc_lock_tokens(token: &[u8; 20], params: &HtlcParams, amount: u64) -> Vec<u8> {
     let lock_fn = abi::Function::new("lockTokens(address,bytes32,uint256,address,uint256)");
     lock_fn.encode(&[
         AbiValue::Address(*token),
@@ -524,7 +517,7 @@ mod tests {
         let script = vec![0xAA; 50];
         let spk = htlc_script_pubkey(&script);
         assert_eq!(spk[0], 0x00); // witness v0
-        assert_eq!(spk[1], 32);   // push 32 bytes
+        assert_eq!(spk[1], 32); // push 32 bytes
     }
 
     // ─── Ethereum HTLC ABI ──────────────────────────────────────
@@ -569,7 +562,8 @@ mod tests {
     fn test_eth_htlc_lock_tokens_selector() {
         let params = sample_params();
         let data = encode_eth_htlc_lock_tokens(&[0xFF; 20], &params, 1000);
-        let expected = abi::function_selector("lockTokens(address,bytes32,uint256,address,uint256)");
+        let expected =
+            abi::function_selector("lockTokens(address,bytes32,uint256,address,uint256)");
         assert_eq!(&data[..4], &expected);
     }
 
@@ -584,9 +578,7 @@ mod tests {
         assert!(SwapSecret::verify(&secret.preimage, &secret.hash));
 
         // 3. Build Bitcoin HTLC
-        let btc_script = build_bitcoin_htlc_script(
-            &secret.hash, 500_000, &RECEIVER_PK, &SENDER_PK,
-        );
+        let btc_script = build_bitcoin_htlc_script(&secret.hash, 500_000, &RECEIVER_PK, &SENDER_PK);
         assert!(!btc_script.is_empty());
 
         // 4. Build Ethereum HTLC

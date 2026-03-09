@@ -320,9 +320,7 @@ impl Psbt {
             let mut utxo_off = 8usize;
             let script_len = encoding::read_compact_size(utxo_data, &mut utxo_off)? as usize;
             let script_end = utxo_off.checked_add(script_len).ok_or_else(|| {
-                SignerError::SigningFailed(format!(
-                    "witness UTXO {i} script length overflow"
-                ))
+                SignerError::SigningFailed(format!("witness UTXO {i} script length overflow"))
             })?;
             if script_end > utxo_data.len() {
                 return Err(SignerError::SigningFailed(format!(
@@ -505,10 +503,12 @@ fn parse_kv_map(
         }
 
         // Read key
-        let key_len_usize = key_len as usize;
-        let end = offset.checked_add(key_len_usize).ok_or_else(|| {
-            SignerError::ParseError("PSBT key length overflow".into())
+        let key_len_usize = usize::try_from(key_len).map_err(|_| {
+            SignerError::ParseError("PSBT key length exceeds platform usize".into())
         })?;
+        let end = offset
+            .checked_add(key_len_usize)
+            .ok_or_else(|| SignerError::ParseError("PSBT key length overflow".into()))?;
         if end > data.len() {
             return Err(SignerError::ParseError("PSBT key truncated".into()));
         }
@@ -519,10 +519,12 @@ fn parse_kv_map(
         let val_len = encoding::read_compact_size(data, offset)?;
 
         // Read value
-        let val_len_usize = val_len as usize;
-        let end = offset.checked_add(val_len_usize).ok_or_else(|| {
-            SignerError::ParseError("PSBT value length overflow".into())
+        let val_len_usize = usize::try_from(val_len).map_err(|_| {
+            SignerError::ParseError("PSBT value length exceeds platform usize".into())
         })?;
+        let end = offset
+            .checked_add(val_len_usize)
+            .ok_or_else(|| SignerError::ParseError("PSBT value length overflow".into()))?;
         if end > data.len() {
             return Err(SignerError::ParseError("PSBT value truncated".into()));
         }
@@ -531,9 +533,7 @@ fn parse_kv_map(
 
         // Reject duplicate keys (BIP-174 requirement)
         if map.contains_key(&key) {
-            return Err(SignerError::ParseError(
-                "PSBT: duplicate key in map".into(),
-            ));
+            return Err(SignerError::ParseError("PSBT: duplicate key in map".into()));
         }
         map.insert(key, value);
     }
@@ -719,6 +719,14 @@ mod tests {
             let parsed = encoding::read_compact_size(&buf, &mut offset).expect("valid");
             assert_eq!(parsed, val, "failed for value {val}");
         }
+    }
+
+    #[test]
+    fn test_parse_kv_map_rejects_huge_key_length() {
+        let mut data = vec![0xFF];
+        data.extend_from_slice(&u64::MAX.to_le_bytes());
+        let mut offset = 0;
+        assert!(parse_kv_map(&data, &mut offset).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! NEO N3 Witness serialization, NEP-11 (NFT), and GAS claim helpers.
 
-use sha2::{Digest, Sha256};
 use crate::crypto::hash160;
+use sha2::{Digest, Sha256};
 
 // ═══════════════════════════════════════════════════════════════════
 // Witness Serialization
@@ -246,7 +246,7 @@ fn neo_crypto_checkmultisig_hash() -> [u8; 4] {
 /// - 256–65535 → PUSHINT16 (0x01) + 2-byte LE value
 fn push_small_integer(buf: &mut Vec<u8>, value: u16) {
     match value {
-        0 => buf.push(0x0F), // PUSH0
+        0 => buf.push(0x0F),                    // PUSH0
         1..=16 => buf.push(0x10 + value as u8), // PUSH1..PUSH16
         17..=255 => {
             buf.push(0x00); // PUSHINT8

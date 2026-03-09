@@ -33,8 +33,8 @@ use crate::solana::transaction::{AccountMeta, Instruction};
 /// Metaplex Token Metadata program ID.
 /// `metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s`
 pub const METADATA_PROGRAM_ID: [u8; 32] = [
-    11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195, 205,
-    88, 184, 108, 115, 26, 160, 253, 181, 73, 182, 209, 188, 3, 248, 41, 70,
+    11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195, 205, 88, 184, 108, 115,
+    26, 160, 253, 181, 73, 182, 209, 188, 3, 248, 41, 70,
 ];
 
 /// Bubblegum program ID (compressed NFTs).
@@ -211,10 +211,10 @@ pub fn create_metadata_account_v3(
     Instruction {
         program_id: METADATA_PROGRAM_ID,
         accounts: vec![
-            AccountMeta::new(*metadata_account, false),   // metadata (writable)
-            AccountMeta::new_readonly(*mint, false),       // mint
+            AccountMeta::new(*metadata_account, false), // metadata (writable)
+            AccountMeta::new_readonly(*mint, false),    // mint
             AccountMeta::new_readonly(*mint_authority, true), // mint authority (signer)
-            AccountMeta::new(*payer, true),                // payer (signer, writable)
+            AccountMeta::new(*payer, true),             // payer (signer, writable)
             AccountMeta::new_readonly(*update_authority, false), // update authority
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
             AccountMeta::new_readonly(SYSVAR_RENT_ID, false),
@@ -257,8 +257,9 @@ pub fn create_master_edition_v3(
 
     // SPL Token program ID: `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
     let token_program: [u8; 32] = [
-        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93, 0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79, 0xAC,
-        0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91, 0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF, 0x00, 0xA9,
+        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93, 0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79,
+        0xAC, 0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91, 0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF,
+        0x00, 0xA9,
     ];
 
     Instruction {
@@ -537,8 +538,14 @@ mod tests {
     #[test]
     fn test_create_metadata_v3_discriminator() {
         let ix = create_metadata_account_v3(
-            &META_ACCT, &MINT, &AUTH, &PAYER, &AUTH,
-            &sample_metadata(), true, None,
+            &META_ACCT,
+            &MINT,
+            &AUTH,
+            &PAYER,
+            &AUTH,
+            &sample_metadata(),
+            true,
+            None,
         );
         assert_eq!(ix.data[0], 33);
     }
@@ -546,8 +553,14 @@ mod tests {
     #[test]
     fn test_create_metadata_v3_program_id() {
         let ix = create_metadata_account_v3(
-            &META_ACCT, &MINT, &AUTH, &PAYER, &AUTH,
-            &sample_metadata(), true, None,
+            &META_ACCT,
+            &MINT,
+            &AUTH,
+            &PAYER,
+            &AUTH,
+            &sample_metadata(),
+            true,
+            None,
         );
         assert_eq!(ix.program_id, METADATA_PROGRAM_ID);
     }
@@ -555,8 +568,14 @@ mod tests {
     #[test]
     fn test_create_metadata_v3_accounts() {
         let ix = create_metadata_account_v3(
-            &META_ACCT, &MINT, &AUTH, &PAYER, &AUTH,
-            &sample_metadata(), true, None,
+            &META_ACCT,
+            &MINT,
+            &AUTH,
+            &PAYER,
+            &AUTH,
+            &sample_metadata(),
+            true,
+            None,
         );
         assert_eq!(ix.accounts.len(), 7);
         assert_eq!(ix.accounts[0].pubkey, META_ACCT);
@@ -576,9 +595,8 @@ mod tests {
             seller_fee_basis_points: 100,
             creators: vec![],
         };
-        let ix = create_metadata_account_v3(
-            &META_ACCT, &MINT, &AUTH, &PAYER, &AUTH, &md, false, None,
-        );
+        let ix =
+            create_metadata_account_v3(&META_ACCT, &MINT, &AUTH, &PAYER, &AUTH, &md, false, None);
         // [0]: discriminator 33
         assert_eq!(ix.data[0], 33);
         // [1..5]: name length (1)
@@ -589,10 +607,19 @@ mod tests {
 
     #[test]
     fn test_create_metadata_v3_with_collection() {
-        let col = Collection { verified: false, key: [0xFF; 32] };
+        let col = Collection {
+            verified: false,
+            key: [0xFF; 32],
+        };
         let ix = create_metadata_account_v3(
-            &META_ACCT, &MINT, &AUTH, &PAYER, &AUTH,
-            &sample_metadata(), true, Some(&col),
+            &META_ACCT,
+            &MINT,
+            &AUTH,
+            &PAYER,
+            &AUTH,
+            &sample_metadata(),
+            true,
+            Some(&col),
         );
         // Data should be longer with collection
         assert!(ix.data.len() > 50);
@@ -602,17 +629,15 @@ mod tests {
 
     #[test]
     fn test_create_master_edition_v3_discriminator() {
-        let ix = create_master_edition_v3(
-            &EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, Some(1),
-        );
+        let ix =
+            create_master_edition_v3(&EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, Some(1));
         assert_eq!(ix.data[0], 17);
     }
 
     #[test]
     fn test_create_master_edition_v3_max_supply() {
-        let ix = create_master_edition_v3(
-            &EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, Some(100),
-        );
+        let ix =
+            create_master_edition_v3(&EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, Some(100));
         assert_eq!(ix.data[1], 1); // Some
         let supply = u64::from_le_bytes(ix.data[2..10].try_into().unwrap());
         assert_eq!(supply, 100);
@@ -620,18 +645,14 @@ mod tests {
 
     #[test]
     fn test_create_master_edition_v3_unlimited() {
-        let ix = create_master_edition_v3(
-            &EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, None,
-        );
+        let ix = create_master_edition_v3(&EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, None);
         assert_eq!(ix.data[1], 0); // None
         assert_eq!(ix.data.len(), 2);
     }
 
     #[test]
     fn test_create_master_edition_v3_accounts() {
-        let ix = create_master_edition_v3(
-            &EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, None,
-        );
+        let ix = create_master_edition_v3(&EDITION, &MINT, &AUTH, &AUTH, &PAYER, &META_ACCT, None);
         assert_eq!(ix.accounts.len(), 9);
         assert!(ix.accounts[2].is_signer); // update authority
         assert!(ix.accounts[3].is_signer); // mint authority
@@ -642,17 +663,13 @@ mod tests {
 
     #[test]
     fn test_verify_collection_discriminator() {
-        let ix = verify_collection(
-            &META_ACCT, &AUTH, &PAYER, &MINT, &[0x11; 32], &[0x22; 32],
-        );
+        let ix = verify_collection(&META_ACCT, &AUTH, &PAYER, &MINT, &[0x11; 32], &[0x22; 32]);
         assert_eq!(ix.data, vec![18]);
     }
 
     #[test]
     fn test_verify_collection_accounts() {
-        let ix = verify_collection(
-            &META_ACCT, &AUTH, &PAYER, &MINT, &[0x11; 32], &[0x22; 32],
-        );
+        let ix = verify_collection(&META_ACCT, &AUTH, &PAYER, &MINT, &[0x11; 32], &[0x22; 32]);
         assert_eq!(ix.accounts.len(), 6);
         assert!(ix.accounts[1].is_signer); // collection authority
         assert!(ix.accounts[2].is_signer); // payer
@@ -662,17 +679,13 @@ mod tests {
 
     #[test]
     fn test_update_metadata_v2_discriminator() {
-        let ix = update_metadata_account_v2(
-            &META_ACCT, &AUTH, None, None, None, None,
-        );
+        let ix = update_metadata_account_v2(&META_ACCT, &AUTH, None, None, None, None);
         assert_eq!(ix.data[0], 15);
     }
 
     #[test]
     fn test_update_metadata_v2_no_changes() {
-        let ix = update_metadata_account_v2(
-            &META_ACCT, &AUTH, None, None, None, None,
-        );
+        let ix = update_metadata_account_v2(&META_ACCT, &AUTH, None, None, None, None);
         // [15, 0, 0, 0, 0] = discriminator + 4 × None
         assert_eq!(ix.data, vec![15, 0, 0, 0, 0]);
     }
@@ -680,9 +693,7 @@ mod tests {
     #[test]
     fn test_update_metadata_v2_with_new_authority() {
         let new_auth = [0xFF; 32];
-        let ix = update_metadata_account_v2(
-            &META_ACCT, &AUTH, None, Some(&new_auth), None, None,
-        );
+        let ix = update_metadata_account_v2(&META_ACCT, &AUTH, None, Some(&new_auth), None, None);
         assert_eq!(ix.data[0], 15);
         assert_eq!(ix.data[1], 0); // no data
         assert_eq!(ix.data[2], 1); // Some(new_authority)
@@ -691,9 +702,7 @@ mod tests {
 
     #[test]
     fn test_update_metadata_v2_accounts() {
-        let ix = update_metadata_account_v2(
-            &META_ACCT, &AUTH, None, None, None, None,
-        );
+        let ix = update_metadata_account_v2(&META_ACCT, &AUTH, None, None, None, None);
         assert_eq!(ix.accounts.len(), 2);
         assert!(ix.accounts[1].is_signer);
     }
@@ -703,8 +712,14 @@ mod tests {
     #[test]
     fn test_bubblegum_mint_v1_discriminator() {
         let ix = mint_v1(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &PAYER, &AUTH, &[0x05; 32], &[0x06; 32],
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &PAYER,
+            &AUTH,
+            &[0x05; 32],
+            &[0x06; 32],
             &sample_metadata(),
         );
         assert_eq!(&ix.data[0..8], &[145, 98, 192, 118, 184, 147, 118, 104]);
@@ -713,8 +728,14 @@ mod tests {
     #[test]
     fn test_bubblegum_mint_v1_program_id() {
         let ix = mint_v1(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &PAYER, &AUTH, &[0x05; 32], &[0x06; 32],
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &PAYER,
+            &AUTH,
+            &[0x05; 32],
+            &[0x06; 32],
             &sample_metadata(),
         );
         assert_eq!(ix.program_id, BUBBLEGUM_PROGRAM_ID);
@@ -723,8 +744,14 @@ mod tests {
     #[test]
     fn test_bubblegum_mint_v1_accounts() {
         let ix = mint_v1(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &PAYER, &AUTH, &[0x05; 32], &[0x06; 32],
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &PAYER,
+            &AUTH,
+            &[0x05; 32],
+            &[0x06; 32],
             &sample_metadata(),
         );
         assert_eq!(ix.accounts.len(), 9);
@@ -737,10 +764,19 @@ mod tests {
     #[test]
     fn test_bubblegum_transfer_discriminator() {
         let ix = transfer(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &[0x05; 32], &[0x06; 32], &[0x07; 32],
-            &[0xAA; 32], &[0xBB; 32], &[0xCC; 32],
-            0, 0, &[],
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &[0x05; 32],
+            &[0x06; 32],
+            &[0x07; 32],
+            &[0xAA; 32],
+            &[0xBB; 32],
+            &[0xCC; 32],
+            0,
+            0,
+            &[],
         );
         assert_eq!(&ix.data[0..8], &[163, 52, 200, 231, 140, 3, 69, 186]);
     }
@@ -751,10 +787,19 @@ mod tests {
         let data_hash = [0xBB; 32];
         let creator_hash = [0xCC; 32];
         let ix = transfer(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &[0x05; 32], &[0x06; 32], &[0x07; 32],
-            &root, &data_hash, &creator_hash,
-            42, 7, &[],
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &[0x05; 32],
+            &[0x06; 32],
+            &[0x07; 32],
+            &root,
+            &data_hash,
+            &creator_hash,
+            42,
+            7,
+            &[],
         );
         assert_eq!(&ix.data[8..40], &root);
         assert_eq!(&ix.data[40..72], &data_hash);
@@ -769,10 +814,19 @@ mod tests {
     fn test_bubblegum_transfer_with_proof() {
         let proof = vec![[0x11; 32], [0x22; 32], [0x33; 32]];
         let ix = transfer(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &[0x05; 32], &[0x06; 32], &[0x07; 32],
-            &[0xAA; 32], &[0xBB; 32], &[0xCC; 32],
-            0, 0, &proof,
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &[0x05; 32],
+            &[0x06; 32],
+            &[0x07; 32],
+            &[0xAA; 32],
+            &[0xBB; 32],
+            &[0xCC; 32],
+            0,
+            0,
+            &proof,
         );
         assert_eq!(ix.accounts.len(), 8 + 3); // base + proof
     }
@@ -780,10 +834,19 @@ mod tests {
     #[test]
     fn test_bubblegum_transfer_leaf_owner_is_signer() {
         let ix = transfer(
-            &[0x01; 32], &[0x02; 32], &[0x03; 32], &[0x04; 32],
-            &[0x05; 32], &[0x06; 32], &[0x07; 32],
-            &[0xAA; 32], &[0xBB; 32], &[0xCC; 32],
-            0, 0, &[],
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &[0x05; 32],
+            &[0x06; 32],
+            &[0x07; 32],
+            &[0xAA; 32],
+            &[0xBB; 32],
+            &[0xCC; 32],
+            0,
+            0,
+            &[],
         );
         assert_eq!(ix.accounts[1].pubkey, [0x02; 32]);
         assert!(ix.accounts[1].is_signer); // leaf owner must sign
@@ -812,11 +875,14 @@ mod tests {
     #[test]
     fn test_borsh_creators() {
         let mut buf = Vec::new();
-        borsh_creators(&mut buf, &[Creator {
-            address: [0xFF; 32],
-            verified: true,
-            share: 50,
-        }]);
+        borsh_creators(
+            &mut buf,
+            &[Creator {
+                address: [0xFF; 32],
+                verified: true,
+                share: 50,
+            }],
+        );
         assert_eq!(buf[0], 1); // Some
         let count = u32::from_le_bytes(buf[1..5].try_into().unwrap());
         assert_eq!(count, 1);
@@ -828,7 +894,10 @@ mod tests {
     #[test]
     fn test_borsh_collection_some() {
         let mut buf = Vec::new();
-        let col = Collection { verified: true, key: [0xAA; 32] };
+        let col = Collection {
+            verified: true,
+            key: [0xAA; 32],
+        };
         borsh_collection(&mut buf, Some(&col));
         assert_eq!(buf[0], 1); // Some
         assert_eq!(buf[1], 1); // verified

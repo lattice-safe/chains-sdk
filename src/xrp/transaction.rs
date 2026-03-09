@@ -302,7 +302,9 @@ fn parse_xrpl_decimal(value: &str) -> Result<(bool, u64, i8), SignerError> {
     };
 
     // Validate all characters are digits
-    if !int_part.chars().all(|c| c.is_ascii_digit()) || !frac_part.chars().all(|c| c.is_ascii_digit()) {
+    if !int_part.chars().all(|c| c.is_ascii_digit())
+        || !frac_part.chars().all(|c| c.is_ascii_digit())
+    {
         return Err(SignerError::ParseError(format!(
             "invalid IOU value: {value}"
         )));

@@ -12,6 +12,7 @@
 //! - Per-input: `PREVIOUS_TXID`, `OUTPUT_INDEX`, `SEQUENCE`
 //! - Per-output: `AMOUNT`, `SCRIPT`
 
+use crate::encoding;
 use crate::error::SignerError;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -362,11 +363,7 @@ impl PsbtV2 {
 
         // ─── Global Map ─────────────────────────────────────────
         // Version = 2
-        write_kv(
-            &mut buf,
-            &[global_key::VERSION],
-            &2u32.to_le_bytes(),
-        );
+        write_kv(&mut buf, &[global_key::VERSION], &2u32.to_le_bytes());
         // TX_VERSION
         write_kv(
             &mut buf,
@@ -446,27 +443,35 @@ impl PsbtV2 {
             if key.len() == 1 {
                 match key[0] {
                     global_key::VERSION => {
-                        if val.len() == 4 {
-                            let v = u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
-                            if v != 2 {
-                                return Err(SignerError::ParseError(
-                                    format!("expected PSBT version 2, got {v}"),
-                                ));
-                            }
-                            found_version = true;
+                        if val.len() != 4 {
+                            return Err(SignerError::ParseError(
+                                "PSBTv2: version must be 4 bytes".into(),
+                            ));
                         }
+                        let v = u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                        if v != 2 {
+                            return Err(SignerError::ParseError(format!(
+                                "expected PSBT version 2, got {v}"
+                            )));
+                        }
+                        found_version = true;
                     }
                     global_key::TX_VERSION => {
-                        if val.len() == 4 {
-                            psbt.tx_version =
-                                u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                        if val.len() != 4 {
+                            return Err(SignerError::ParseError(
+                                "PSBTv2: tx version must be 4 bytes".into(),
+                            ));
                         }
+                        psbt.tx_version = u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
                     }
                     global_key::FALLBACK_LOCKTIME => {
-                        if val.len() == 4 {
-                            psbt.fallback_locktime =
-                                u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                        if val.len() != 4 {
+                            return Err(SignerError::ParseError(
+                                "PSBTv2: fallback locktime must be 4 bytes".into(),
+                            ));
                         }
+                        psbt.fallback_locktime =
+                            u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
                     }
                     global_key::INPUT_COUNT => {
                         input_count = Some(read_compact_size(&val)?);
@@ -492,14 +497,16 @@ impl PsbtV2 {
             return Err(SignerError::ParseError("missing PSBT version".into()));
         }
 
-        let n_inputs = input_count
-            .ok_or_else(|| SignerError::ParseError("missing input count".into()))?;
-        let n_outputs = output_count
-            .ok_or_else(|| SignerError::ParseError("missing output count".into()))?;
+        let n_inputs =
+            input_count.ok_or_else(|| SignerError::ParseError("missing input count".into()))?;
+        let n_outputs =
+            output_count.ok_or_else(|| SignerError::ParseError("missing output count".into()))?;
 
         // Parse input maps
         for i in 0..n_inputs {
             let mut input = PsbtV2Input::new([0; 32], 0);
+            let mut has_previous_txid = false;
+            let mut has_output_index = false;
             let mut found_terminator = false;
             while pos < data.len() {
                 if data[pos] == 0x00 {
@@ -513,35 +520,74 @@ impl PsbtV2 {
                 if key.len() == 1 {
                     match key[0] {
                         input_key::PREVIOUS_TXID => {
-                            if val.len() == 32 {
-                                input.previous_txid.copy_from_slice(&val);
+                            if has_previous_txid {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: duplicate input previous_txid in map {i}",
+                                )));
                             }
+                            if val.len() != 32 {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: input {i} previous_txid must be 32 bytes, got {}",
+                                    val.len()
+                                )));
+                            }
+                            input.previous_txid.copy_from_slice(&val);
+                            has_previous_txid = true;
                         }
                         input_key::OUTPUT_INDEX => {
-                            if val.len() == 4 {
-                                input.output_index =
-                                    u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                            if has_output_index {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: duplicate input output_index in map {i}",
+                                )));
                             }
+                            if val.len() != 4 {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: input {i} output_index must be 4 bytes, got {}",
+                                    val.len()
+                                )));
+                            }
+                            input.output_index =
+                                u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                            has_output_index = true;
                         }
                         input_key::SEQUENCE => {
-                            if val.len() == 4 {
-                                input.sequence =
-                                    u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                            if val.len() != 4 {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: input {i} sequence must be 4 bytes, got {}",
+                                    val.len()
+                                )));
                             }
+                            input.sequence = u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
                         }
                         input_key::REQUIRED_TIME_LOCKTIME => {
-                            if val.len() == 4 {
-                                input.required_time_locktime = Some(u32::from_le_bytes([
-                                    val[0], val[1], val[2], val[3],
-                                ]));
+                            if input.required_time_locktime.is_some() {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: duplicate input required_time_locktime in map {i}",
+                                )));
                             }
+                            if val.len() != 4 {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: input {i} required_time_locktime must be 4 bytes, got {}",
+                                    val.len()
+                                )));
+                            }
+                            input.required_time_locktime =
+                                Some(u32::from_le_bytes([val[0], val[1], val[2], val[3]]));
                         }
                         input_key::REQUIRED_HEIGHT_LOCKTIME => {
-                            if val.len() == 4 {
-                                input.required_height_locktime = Some(u32::from_le_bytes([
-                                    val[0], val[1], val[2], val[3],
-                                ]));
+                            if input.required_height_locktime.is_some() {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: duplicate input required_height_locktime in map {i}",
+                                )));
                             }
+                            if val.len() != 4 {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: input {i} required_height_locktime must be 4 bytes, got {}",
+                                    val.len()
+                                )));
+                            }
+                            input.required_height_locktime =
+                                Some(u32::from_le_bytes([val[0], val[1], val[2], val[3]]));
                         }
                         _ => {
                             input.extra.push((key, val));
@@ -556,12 +602,24 @@ impl PsbtV2 {
                     "PSBTv2: unterminated input map {i}"
                 )));
             }
+            if !has_previous_txid {
+                return Err(SignerError::ParseError(format!(
+                    "PSBTv2: missing PREVIOUS_TXID in input map {i}",
+                )));
+            }
+            if !has_output_index {
+                return Err(SignerError::ParseError(format!(
+                    "PSBTv2: missing OUTPUT_INDEX in input map {i}",
+                )));
+            }
             psbt.inputs.push(input);
         }
 
         // Parse output maps
         for i in 0..n_outputs {
             let mut output = PsbtV2Output::new(0, Vec::new());
+            let mut has_amount = false;
+            let mut has_script = false;
             let mut found_terminator = false;
             while pos < data.len() {
                 if data[pos] == 0x00 {
@@ -575,15 +633,30 @@ impl PsbtV2 {
                 if key.len() == 1 {
                     match key[0] {
                         output_key::AMOUNT => {
-                            if val.len() == 8 {
-                                output.amount = u64::from_le_bytes([
-                                    val[0], val[1], val[2], val[3], val[4], val[5], val[6],
-                                    val[7],
-                                ]);
+                            if has_amount {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: duplicate output amount in map {i}",
+                                )));
                             }
+                            if val.len() != 8 {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: output {i} amount must be 8 bytes, got {}",
+                                    val.len()
+                                )));
+                            }
+                            output.amount = u64::from_le_bytes([
+                                val[0], val[1], val[2], val[3], val[4], val[5], val[6], val[7],
+                            ]);
+                            has_amount = true;
                         }
                         output_key::SCRIPT => {
+                            if has_script {
+                                return Err(SignerError::ParseError(format!(
+                                    "PSBTv2: duplicate output script in map {i}",
+                                )));
+                            }
                             output.script = val;
+                            has_script = true;
                         }
                         _ => {
                             output.extra.push((key, val));
@@ -596,6 +669,16 @@ impl PsbtV2 {
             if !found_terminator {
                 return Err(SignerError::ParseError(format!(
                     "PSBTv2: unterminated output map {i}"
+                )));
+            }
+            if !has_amount {
+                return Err(SignerError::ParseError(format!(
+                    "PSBTv2: missing AMOUNT in output map {i}",
+                )));
+            }
+            if !has_script {
+                return Err(SignerError::ParseError(format!(
+                    "PSBTv2: missing SCRIPT in output map {i}",
                 )));
             }
             psbt.outputs.push(output);
@@ -637,21 +720,31 @@ fn read_kv(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, usize), SignerError> {
 
     // Key length
     let (key_len, consumed) = read_compact_size_at(data, pos)?;
-    pos += consumed;
-    if pos + key_len > data.len() {
+    pos = pos
+        .checked_add(consumed)
+        .ok_or_else(|| SignerError::ParseError("PSBT key length offset overflow".into()))?;
+    let key_end = pos
+        .checked_add(key_len)
+        .ok_or_else(|| SignerError::ParseError("PSBT key length overflow".into()))?;
+    if key_end > data.len() {
         return Err(SignerError::ParseError("truncated PSBT key".into()));
     }
-    let key = data[pos..pos + key_len].to_vec();
-    pos += key_len;
+    let key = data[pos..key_end].to_vec();
+    pos = key_end;
 
     // Value length
     let (val_len, consumed) = read_compact_size_at(data, pos)?;
-    pos += consumed;
-    if pos + val_len > data.len() {
+    pos = pos
+        .checked_add(consumed)
+        .ok_or_else(|| SignerError::ParseError("PSBT value length offset overflow".into()))?;
+    let val_end = pos
+        .checked_add(val_len)
+        .ok_or_else(|| SignerError::ParseError("PSBT value length overflow".into()))?;
+    if val_end > data.len() {
         return Err(SignerError::ParseError("truncated PSBT value".into()));
     }
-    let value = data[pos..pos + val_len].to_vec();
-    pos += val_len;
+    let value = data[pos..val_end].to_vec();
+    pos = val_end;
 
     Ok((key, value, pos))
 }
@@ -673,22 +766,16 @@ fn compact_size(n: usize) -> Vec<u8> {
 
 /// Read a compact_size from a serialized value.
 fn read_compact_size(data: &[u8]) -> Result<usize, SignerError> {
-    if data.is_empty() {
+    let mut offset = 0usize;
+    let value = encoding::read_compact_size(data, &mut offset)
+        .map_err(|e| SignerError::ParseError(format!("compact_size: {e}")))?;
+    if offset != data.len() {
         return Err(SignerError::ParseError(
-            "compact_size: empty data".into(),
+            "compact_size: trailing bytes".into(),
         ));
     }
-    if data[0] < 0xFD {
-        Ok(data[0] as usize)
-    } else if data[0] == 0xFD && data.len() >= 3 {
-        Ok(u16::from_le_bytes([data[1], data[2]]) as usize)
-    } else if data[0] == 0xFE && data.len() >= 5 {
-        Ok(u32::from_le_bytes([data[1], data[2], data[3], data[4]]) as usize)
-    } else {
-        Err(SignerError::ParseError(
-            "compact_size: truncated or unsupported".into(),
-        ))
-    }
+    usize::try_from(value)
+        .map_err(|_| SignerError::ParseError("compact_size: value exceeds platform usize".into()))
 }
 
 /// Read a compact_size at a position. Returns (value, bytes_consumed).
@@ -700,20 +787,54 @@ fn read_compact_size_at(data: &[u8], pos: usize) -> Result<(usize, usize), Signe
     if first < 0xFD {
         Ok((first as usize, 1))
     } else if first == 0xFD {
-        if pos + 3 > data.len() {
+        let end = pos
+            .checked_add(3)
+            .ok_or_else(|| SignerError::ParseError("compact size offset overflow".into()))?;
+        if end > data.len() {
             return Err(SignerError::ParseError("truncated compact size".into()));
         }
-        let val = u16::from_le_bytes([data[pos + 1], data[pos + 2]]) as usize;
-        Ok((val, 3))
+        let val = u16::from_le_bytes([data[pos + 1], data[pos + 2]]);
+        if val < 0xFD {
+            return Err(SignerError::ParseError("non-canonical compact size".into()));
+        }
+        Ok((usize::from(val), 3))
     } else if first == 0xFE {
-        if pos + 5 > data.len() {
+        let end = pos
+            .checked_add(5)
+            .ok_or_else(|| SignerError::ParseError("compact size offset overflow".into()))?;
+        if end > data.len() {
             return Err(SignerError::ParseError("truncated compact size".into()));
         }
-        let val = u32::from_le_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]])
-            as usize;
+        let val = u32::from_le_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]);
+        if val <= 0xFFFF {
+            return Err(SignerError::ParseError("non-canonical compact size".into()));
+        }
+        let val = usize::try_from(val)
+            .map_err(|_| SignerError::ParseError("compact size exceeds platform usize".into()))?;
         Ok((val, 5))
     } else {
-        Err(SignerError::ParseError("unsupported compact size".into()))
+        let end = pos
+            .checked_add(9)
+            .ok_or_else(|| SignerError::ParseError("compact size offset overflow".into()))?;
+        if end > data.len() {
+            return Err(SignerError::ParseError("truncated compact size".into()));
+        }
+        let val = u64::from_le_bytes([
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
+            data[pos + 8],
+        ]);
+        if val <= 0xFFFF_FFFF {
+            return Err(SignerError::ParseError("non-canonical compact size".into()));
+        }
+        let val = usize::try_from(val)
+            .map_err(|_| SignerError::ParseError("compact size exceeds platform usize".into()))?;
+        Ok((val, 9))
     }
 }
 
@@ -725,6 +846,30 @@ fn read_compact_size_at(data: &[u8], pos: usize) -> Result<(usize, usize), Signe
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    fn minimal_psbt_with_counts(input_count: usize, output_count: usize) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"psbt\xFF");
+        write_kv(&mut data, &[global_key::VERSION], &2u32.to_le_bytes());
+        write_kv(&mut data, &[global_key::TX_VERSION], &2u32.to_le_bytes());
+        write_kv(
+            &mut data,
+            &[global_key::FALLBACK_LOCKTIME],
+            &0u32.to_le_bytes(),
+        );
+        write_kv(
+            &mut data,
+            &[global_key::INPUT_COUNT],
+            &compact_size(input_count),
+        );
+        write_kv(
+            &mut data,
+            &[global_key::OUTPUT_COUNT],
+            &compact_size(output_count),
+        );
+        data.push(0x00);
+        data
+    }
 
     // ─── Construction ────────────────────────────────────────────
 
@@ -1058,6 +1203,46 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_deserialize_rejects_input_missing_previous_txid() {
+        let mut data = minimal_psbt_with_counts(1, 0);
+        write_kv(&mut data, &[input_key::OUTPUT_INDEX], &0u32.to_le_bytes());
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_input_missing_output_index() {
+        let mut data = minimal_psbt_with_counts(1, 0);
+        write_kv(&mut data, &[input_key::PREVIOUS_TXID], &[0xAA; 32]);
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_output_missing_amount() {
+        let mut data = minimal_psbt_with_counts(0, 1);
+        write_kv(&mut data, &[output_key::SCRIPT], &[0x51]);
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_output_missing_script() {
+        let mut data = minimal_psbt_with_counts(0, 1);
+        write_kv(&mut data, &[output_key::AMOUNT], &50_000u64.to_le_bytes());
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
     // ─── Multiple Inputs/Outputs ─────────────────────────────────
 
     #[test]
@@ -1147,10 +1332,7 @@ mod tests {
     fn test_compact_size_large() {
         let cs = compact_size(70000);
         assert_eq!(cs[0], 0xFE);
-        assert_eq!(
-            u32::from_le_bytes([cs[1], cs[2], cs[3], cs[4]]),
-            70000
-        );
+        assert_eq!(u32::from_le_bytes([cs[1], cs[2], cs[3], cs[4]]), 70000);
     }
 
     // ─── Read Compact Size ───────────────────────────────────────
@@ -1166,6 +1348,19 @@ mod tests {
     fn test_read_compact_size_medium() {
         let data = [0xFD, 0x00, 0x01]; // 256
         assert_eq!(read_compact_size(&data).unwrap(), 256);
+    }
+
+    #[test]
+    fn test_read_compact_size_rejects_non_canonical() {
+        // 252 must use single-byte encoding, not 0xFD form
+        let data = [0xFD, 0xFC, 0x00];
+        assert!(read_compact_size(&data).is_err());
+    }
+
+    #[test]
+    fn test_read_compact_size_rejects_trailing_bytes() {
+        let data = [0x01, 0x00];
+        assert!(read_compact_size(&data).is_err());
     }
 
     #[test]

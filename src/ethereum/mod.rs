@@ -91,21 +91,28 @@ impl EthereumSignature {
         let mut s = [0u8; 32];
         r.copy_from_slice(&bytes[..32]);
         s.copy_from_slice(&bytes[32..64]);
-        Ok(Self { r, s, v: u64::from(bytes[64]) })
+        Ok(Self {
+            r,
+            s,
+            v: u64::from(bytes[64]),
+        })
     }
 
     /// Extract the recovery bit (0 or 1) from `v`, handling both
     /// legacy (v=27/28) and EIP-155 (v = chain_id*2 + 35 + {0,1}).
-    pub fn recovery_bit(&self) -> u8 {
+    pub fn recovery_bit(&self) -> Result<u8, SignerError> {
         if self.v >= 35 {
             // EIP-155: recovery_bit = (v - 35) % 2
-            ((self.v - 35) % 2) as u8
-        } else if self.v == 28 {
-            1
+            Ok(((self.v - 35) % 2) as u8)
         } else {
-            // v == 27 or any other value → 0
-            // (callers validate via RecoveryId::try_from)
-            0
+            match self.v {
+                27 => Ok(0),
+                28 => Ok(1),
+                _ => Err(SignerError::InvalidSignature(format!(
+                    "invalid legacy v value {}",
+                    self.v
+                ))),
+            }
         }
     }
 }
@@ -359,9 +366,8 @@ pub fn ecrecover_digest(
     digest: &[u8; 32],
     signature: &EthereumSignature,
 ) -> Result<[u8; 20], SignerError> {
-    let rec_id = RecoveryId::try_from(signature.recovery_bit()).map_err(|_| {
-        SignerError::InvalidSignature("invalid recovery id".into())
-    })?;
+    let rec_id = RecoveryId::try_from(signature.recovery_bit()?)
+        .map_err(|_| SignerError::InvalidSignature("invalid recovery id".into()))?;
 
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signature.r);
@@ -594,7 +600,7 @@ impl EthereumVerifier {
         digest: &[u8; 32],
         signature: &EthereumSignature,
     ) -> Result<bool, SignerError> {
-        let rec_id = RecoveryId::from_byte(signature.recovery_bit())
+        let rec_id = RecoveryId::from_byte(signature.recovery_bit()?)
             .ok_or_else(|| SignerError::InvalidSignature("invalid recovery id".into()))?;
 
         let mut sig_bytes = [0u8; 64];
@@ -859,6 +865,17 @@ mod tests {
         assert_eq!(sig.r, restored.r);
         assert_eq!(sig.s, restored.s);
         assert_eq!(sig.v, restored.v);
+    }
+
+    #[test]
+    fn test_invalid_legacy_v_rejected() {
+        let signer = EthereumSigner::generate().unwrap();
+        let mut sig = signer.sign(b"invalid-v").unwrap();
+        sig.v = 1;
+        assert!(ecrecover(b"invalid-v", &sig).is_err());
+
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        assert!(verifier.verify(b"invalid-v", &sig).is_err());
     }
 
     // ─── EIP-712 Tests ──────────────────────────────────────────────────

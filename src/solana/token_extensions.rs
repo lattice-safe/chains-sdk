@@ -19,11 +19,9 @@ use super::transaction::{AccountMeta, Instruction};
 
 /// Token-2022 Program ID: `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`
 pub const TOKEN_2022_ID: [u8; 32] = [
-    0x06, 0xDD, 0xF6, 0xE1, 0xEE, 0x75, 0x8F, 0xDE, 0x18, 0x42, 0x5D, 0xBC, 0xE4, 0x6C, 0xCD,
-    0xDA, 0xB6, 0x1A, 0xFC, 0x4D, 0x83, 0xB9, 0x0D, 0x27, 0xFE, 0xBD, 0xF9, 0x28, 0xD8, 0xA1,
-    0x8B, 0xFC,
+    0x06, 0xDD, 0xF6, 0xE1, 0xEE, 0x75, 0x8F, 0xDE, 0x18, 0x42, 0x5D, 0xBC, 0xE4, 0x6C, 0xCD, 0xDA,
+    0xB6, 0x1A, 0xFC, 0x4D, 0x83, 0xB9, 0x0D, 0x27, 0xFE, 0xBD, 0xF9, 0x28, 0xD8, 0xA1, 0x8B, 0xFC,
 ];
-
 
 // ═══════════════════════════════════════════════════════════════════
 // Default Account State Extension
@@ -44,10 +42,7 @@ pub enum AccountState {
 ///
 /// Sets the default state for new token accounts created for this mint.
 #[must_use]
-pub fn initialize_default_account_state(
-    mint: &[u8; 32],
-    state: AccountState,
-) -> Instruction {
+pub fn initialize_default_account_state(mint: &[u8; 32], state: AccountState) -> Instruction {
     // Extension instruction: discriminator = 29 (DefaultAccountState)
     // Sub-instruction: 0 = Initialize
     let data = vec![29, 0, state as u8];
@@ -235,10 +230,7 @@ pub fn update_transfer_hook(
 ///
 /// Prevents certain actions from being performed via CPI (cross-program invocation).
 #[must_use]
-pub fn enable_cpi_guard(
-    account: &[u8; 32],
-    owner: &[u8; 32],
-) -> Instruction {
+pub fn enable_cpi_guard(account: &[u8; 32], owner: &[u8; 32]) -> Instruction {
     let data = vec![37, 0]; // CpiGuard + Enable
     Instruction {
         program_id: TOKEN_2022_ID,
@@ -252,10 +244,7 @@ pub fn enable_cpi_guard(
 
 /// Disable CPI Guard on a token account.
 #[must_use]
-pub fn disable_cpi_guard(
-    account: &[u8; 32],
-    owner: &[u8; 32],
-) -> Instruction {
+pub fn disable_cpi_guard(account: &[u8; 32], owner: &[u8; 32]) -> Instruction {
     let data = vec![37, 1]; // CpiGuard + Disable
     Instruction {
         program_id: TOKEN_2022_ID,
@@ -275,10 +264,7 @@ pub fn disable_cpi_guard(
 ///
 /// Sets a delegate that can transfer/burn from any account of this mint.
 #[must_use]
-pub fn initialize_permanent_delegate(
-    mint: &[u8; 32],
-    delegate: &[u8; 32],
-) -> Instruction {
+pub fn initialize_permanent_delegate(mint: &[u8; 32], delegate: &[u8; 32]) -> Instruction {
     let mut data = vec![35, 0]; // PermanentDelegate + Initialize
     data.extend_from_slice(delegate);
     Instruction {
@@ -294,10 +280,7 @@ pub fn initialize_permanent_delegate(
 
 /// Enable required memo on incoming transfers for a token account.
 #[must_use]
-pub fn enable_required_memo_transfers(
-    account: &[u8; 32],
-    owner: &[u8; 32],
-) -> Instruction {
+pub fn enable_required_memo_transfers(account: &[u8; 32], owner: &[u8; 32]) -> Instruction {
     let data = vec![30, 0]; // MemoTransfer + Enable
     Instruction {
         program_id: TOKEN_2022_ID,
@@ -311,10 +294,7 @@ pub fn enable_required_memo_transfers(
 
 /// Disable required memo on incoming transfers for a token account.
 #[must_use]
-pub fn disable_required_memo_transfers(
-    account: &[u8; 32],
-    owner: &[u8; 32],
-) -> Instruction {
+pub fn disable_required_memo_transfers(account: &[u8; 32], owner: &[u8; 32]) -> Instruction {
     let data = vec![30, 1]; // MemoTransfer + Disable
     Instruction {
         program_id: TOKEN_2022_ID,
@@ -593,13 +573,7 @@ mod tests {
 
     #[test]
     fn test_initialize_transfer_fee_config() {
-        let ix = initialize_transfer_fee_config(
-            &MINT,
-            Some(&AUTH),
-            Some(&DEST),
-            100,
-            1_000_000,
-        );
+        let ix = initialize_transfer_fee_config(&MINT, Some(&AUTH), Some(&DEST), 100, 1_000_000);
         assert_eq!(ix.data[0], 26);
         assert_eq!(ix.data[1], 0);
         assert!(ix.data.len() > 70);
@@ -611,7 +585,7 @@ mod tests {
             &MINT,
             Some(&AUTH),
             Some(&DEST),
-            200,      // 2%
+            200, // 2%
             5_000_000,
         );
         // [26, 0, 1, AUTH(32), 1, DEST(32), fee_bps(2), max_fee(8)]
@@ -819,8 +793,12 @@ mod tests {
     #[test]
     fn test_initialize_token_metadata() {
         let ix = initialize_token_metadata(
-            &MINT, &AUTH, &AUTH,
-            "Test Token", "TEST", "https://example.com/meta.json",
+            &MINT,
+            &AUTH,
+            &AUTH,
+            "Test Token",
+            "TEST",
+            "https://example.com/meta.json",
         );
         assert_eq!(ix.program_id, TOKEN_2022_ID);
         assert_eq!(ix.accounts.len(), 3);
@@ -829,18 +807,14 @@ mod tests {
 
     #[test]
     fn test_initialize_token_metadata_discriminator() {
-        let ix = initialize_token_metadata(
-            &MINT, &AUTH, &AUTH, "X", "Y", "Z",
-        );
+        let ix = initialize_token_metadata(&MINT, &AUTH, &AUTH, "X", "Y", "Z");
         // Known discriminator: [210, 225, 30, 162, 88, 184, 226, 143]
         assert_eq!(&ix.data[0..8], &[210, 225, 30, 162, 88, 184, 226, 143]);
     }
 
     #[test]
     fn test_initialize_token_metadata_string_encoding() {
-        let ix = initialize_token_metadata(
-            &MINT, &AUTH, &AUTH, "MyToken", "MTK", "https://uri",
-        );
+        let ix = initialize_token_metadata(&MINT, &AUTH, &AUTH, "MyToken", "MTK", "https://uri");
         // After 8-byte discriminator:
         // name: u32(7) + "MyToken"
         let name_len = u32::from_le_bytes(ix.data[8..12].try_into().unwrap());
@@ -859,9 +833,7 @@ mod tests {
     #[test]
     fn test_initialize_token_metadata_accounts() {
         let mint_auth = [0xDD; 32];
-        let ix = initialize_token_metadata(
-            &MINT, &AUTH, &mint_auth, "X", "Y", "Z",
-        );
+        let ix = initialize_token_metadata(&MINT, &AUTH, &mint_auth, "X", "Y", "Z");
         assert_eq!(ix.accounts[0].pubkey, MINT);
         assert!(!ix.accounts[0].is_signer);
         assert_eq!(ix.accounts[1].pubkey, AUTH);
@@ -955,15 +927,15 @@ mod tests {
     fn test_all_discriminator_values() {
         // Verify each extension uses a distinct discriminator
         let discriminators = [
-            initialize_transfer_fee_config(&MINT, None, None, 0, 0).data[0],         // 26
-            initialize_default_account_state(&MINT, AccountState::Frozen).data[0],     // 29
-            enable_required_memo_transfers(&MINT, &AUTH).data[0],                       // 30
-            initialize_interest_bearing_config(&MINT, None, 0).data[0],                // 33
-            initialize_permanent_delegate(&MINT, &AUTH).data[0],                        // 35
-            initialize_transfer_hook(&MINT, None, &[0; 32]).data[0],                   // 36
-            enable_cpi_guard(&MINT, &AUTH).data[0],                                     // 37
-            initialize_group_pointer(&MINT, None, &[0; 32]).data[0],                   // 40
-            initialize_group_member_pointer(&MINT, None, &[0; 32]).data[0],            // 41
+            initialize_transfer_fee_config(&MINT, None, None, 0, 0).data[0], // 26
+            initialize_default_account_state(&MINT, AccountState::Frozen).data[0], // 29
+            enable_required_memo_transfers(&MINT, &AUTH).data[0],            // 30
+            initialize_interest_bearing_config(&MINT, None, 0).data[0],      // 33
+            initialize_permanent_delegate(&MINT, &AUTH).data[0],             // 35
+            initialize_transfer_hook(&MINT, None, &[0; 32]).data[0],         // 36
+            enable_cpi_guard(&MINT, &AUTH).data[0],                          // 37
+            initialize_group_pointer(&MINT, None, &[0; 32]).data[0],         // 40
+            initialize_group_member_pointer(&MINT, None, &[0; 32]).data[0],  // 41
         ];
         assert_eq!(discriminators, [26, 29, 30, 33, 35, 36, 37, 40, 41]);
     }

@@ -25,25 +25,18 @@ use crate::ethereum::abi::{AbiValue, Function};
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
-/// Uniswap V4 PoolManager address (Ethereum mainnet).
+/// Uniswap v4 has no canonical Ethereum mainnet PoolManager address yet.
 ///
-/// **WARNING**: This is a placeholder value — V4 is not yet deployed on mainnet.
-/// Do **not** use in production until updated with the canonical address.
-#[deprecated(note = "placeholder address — Uniswap V4 not yet deployed on mainnet")]
-pub const POOL_MANAGER: [u8; 20] = [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x01, // placeholder — V4 not yet deployed
-];
-
+/// This module intentionally does not export a default PoolManager constant.
+/// Integrations must provide the contract address explicitly via chain config.
 /// Common fee tiers (in hundredths of a basis point).
-pub const FEE_LOWEST: u32 = 100;    // 0.01%
+pub const FEE_LOWEST: u32 = 100; // 0.01%
 /// Low fee tier.
-pub const FEE_LOW: u32 = 500;       // 0.05%
+pub const FEE_LOW: u32 = 500; // 0.05%
 /// Medium fee tier.
-pub const FEE_MEDIUM: u32 = 3000;   // 0.30%
+pub const FEE_MEDIUM: u32 = 3000; // 0.30%
 /// High fee tier.
-pub const FEE_HIGH: u32 = 10_000;   // 1.00%
+pub const FEE_HIGH: u32 = 10_000; // 1.00%
 
 /// Standard tick spacings per fee tier.
 pub const TICK_SPACING_LOWEST: i32 = 1;
@@ -234,9 +227,8 @@ impl SwapParams {
 /// ABI-encode a `swap(PoolKey, SwapParams, bytes hookData)` call.
 #[must_use]
 pub fn encode_swap(pool: &PoolKey, params: &SwapParams) -> Vec<u8> {
-    let func = Function::new(
-        "swap((address,address,uint24,int24,address),(bool,int256,uint160),bytes)",
-    );
+    let func =
+        Function::new("swap((address,address,uint24,int24,address),(bool,int256,uint160),bytes)");
 
     // Encode amount_specified as int256
     let amount_bytes = i128_to_int256(params.amount_specified);
@@ -260,13 +252,21 @@ pub fn encode_multihop_path(hops: &[(PoolKey, bool)]) -> Vec<u8> {
     let mut path = Vec::new();
     for (i, (pool, zero_for_one)) in hops.iter().enumerate() {
         if i == 0 {
-            let first_token = if *zero_for_one { pool.currency0 } else { pool.currency1 };
+            let first_token = if *zero_for_one {
+                pool.currency0
+            } else {
+                pool.currency1
+            };
             path.extend_from_slice(&first_token);
         }
         path.extend_from_slice(&pool.fee.to_be_bytes()[1..]); // 3 bytes
         path.extend_from_slice(&(pool.tick_spacing as u32).to_be_bytes()[2..]); // 2 bytes
         path.extend_from_slice(&pool.hooks);
-        let next_token = if *zero_for_one { pool.currency1 } else { pool.currency0 };
+        let next_token = if *zero_for_one {
+            pool.currency1
+        } else {
+            pool.currency0
+        };
         path.extend_from_slice(&next_token);
     }
     path

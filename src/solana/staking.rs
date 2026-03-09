@@ -85,10 +85,7 @@ pub fn delegate_stake(
 ///
 /// Deactivates a delegated stake account. After the cooldown period,
 /// the stake can be withdrawn.
-pub fn deactivate_stake(
-    stake_account: &[u8; 32],
-    authority: &[u8; 32],
-) -> Instruction {
+pub fn deactivate_stake(stake_account: &[u8; 32], authority: &[u8; 32]) -> Instruction {
     // Instruction index 5 = Deactivate
     let data = vec![5, 0, 0, 0];
 
@@ -160,11 +157,7 @@ pub fn initialize_stake(
 }
 
 /// Build a `Merge` instruction to combine two stake accounts.
-pub fn merge_stake(
-    destination: &[u8; 32],
-    source: &[u8; 32],
-    authority: &[u8; 32],
-) -> Instruction {
+pub fn merge_stake(destination: &[u8; 32], source: &[u8; 32], authority: &[u8; 32]) -> Instruction {
     // Instruction index 7 = Merge
     let data = vec![7, 0, 0, 0];
 
@@ -214,14 +207,16 @@ pub mod marinade {
 
     /// Marinade Finance program ID: `MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD`
     pub const MARINADE_PROGRAM_ID: [u8; 32] = [
-        0x05, 0x45, 0xE3, 0x65, 0xBE, 0xF2, 0x71, 0xAD, 0x75, 0x35, 0x03, 0x67, 0x56, 0x5D, 0xA4, 0x0D,
-        0xA3, 0x36, 0xDC, 0x1C, 0x87, 0x9B, 0xB1, 0x54, 0x8A, 0x7A, 0xFC, 0xC5, 0x5A, 0xA9, 0x39, 0x1E,
+        0x05, 0x45, 0xE3, 0x65, 0xBE, 0xF2, 0x71, 0xAD, 0x75, 0x35, 0x03, 0x67, 0x56, 0x5D, 0xA4,
+        0x0D, 0xA3, 0x36, 0xDC, 0x1C, 0x87, 0x9B, 0xB1, 0x54, 0x8A, 0x7A, 0xFC, 0xC5, 0x5A, 0xA9,
+        0x39, 0x1E,
     ];
 
     /// SPL Token program ID: `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
     const TOKEN_PROGRAM_ID: [u8; 32] = [
-        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93, 0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79, 0xAC,
-        0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91, 0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF, 0x00, 0xA9,
+        0x06, 0xDD, 0xF6, 0xE1, 0xD7, 0x65, 0xA1, 0x93, 0xD9, 0xCB, 0xE1, 0x46, 0xCE, 0xEB, 0x79,
+        0xAC, 0x1C, 0xB4, 0x85, 0xED, 0x5F, 0x5B, 0x37, 0x91, 0x3A, 0x8C, 0xF5, 0x85, 0x7E, 0xFF,
+        0x00, 0xA9,
     ];
 
     /// Build a Marinade `Deposit` instruction (stake SOL → receive mSOL).
@@ -467,13 +462,25 @@ mod tests {
 
     #[test]
     fn test_marinade_deposit_discriminator() {
-        let ix = marinade::deposit(&USER, &MSOL_MINT, &USER_MSOL, &MARINADE_STATE, 1_000_000_000);
+        let ix = marinade::deposit(
+            &USER,
+            &MSOL_MINT,
+            &USER_MSOL,
+            &MARINADE_STATE,
+            1_000_000_000,
+        );
         assert_eq!(&ix.data[..8], &[242, 35, 198, 137, 82, 225, 242, 182]);
     }
 
     #[test]
     fn test_marinade_deposit_amount() {
-        let ix = marinade::deposit(&USER, &MSOL_MINT, &USER_MSOL, &MARINADE_STATE, 2_000_000_000);
+        let ix = marinade::deposit(
+            &USER,
+            &MSOL_MINT,
+            &USER_MSOL,
+            &MARINADE_STATE,
+            2_000_000_000,
+        );
         let amount = u64::from_le_bytes(ix.data[8..16].try_into().unwrap());
         assert_eq!(amount, 2_000_000_000);
     }
@@ -506,13 +513,15 @@ mod tests {
 
     #[test]
     fn test_marinade_order_unstake_discriminator() {
-        let ix = marinade::order_unstake(&USER, &MSOL_MINT, &USER_MSOL, &MARINADE_STATE, &TICKET, 100);
+        let ix =
+            marinade::order_unstake(&USER, &MSOL_MINT, &USER_MSOL, &MARINADE_STATE, &TICKET, 100);
         assert_eq!(&ix.data[..8], &[97, 167, 144, 107, 117, 190, 128, 36]);
     }
 
     #[test]
     fn test_marinade_order_unstake_accounts() {
-        let ix = marinade::order_unstake(&USER, &MSOL_MINT, &USER_MSOL, &MARINADE_STATE, &TICKET, 100);
+        let ix =
+            marinade::order_unstake(&USER, &MSOL_MINT, &USER_MSOL, &MARINADE_STATE, &TICKET, 100);
         assert_eq!(ix.accounts.len(), 8);
         assert!(ix.accounts[3].is_signer); // user
         assert!(ix.accounts[4].is_writable); // ticket

@@ -359,9 +359,10 @@ mod tests {
         // Verify we can create a signer from the derived key
         let signer = BlsSigner::from_bytes(&*sk).unwrap();
         let sig = signer.sign(b"eip2333 test").unwrap();
-        let verifier =
-            crate::ethereum::bls::BlsVerifier::from_public_key_bytes(&Signer::public_key_bytes(&signer))
-                .unwrap();
+        let verifier = crate::ethereum::bls::BlsVerifier::from_public_key_bytes(
+            &Signer::public_key_bytes(&signer),
+        )
+        .unwrap();
         assert!(verifier.verify(b"eip2333 test", &sig).unwrap());
     }
 

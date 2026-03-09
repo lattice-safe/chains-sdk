@@ -542,13 +542,19 @@ mod tests {
         let m = Mnemonic::from_phrase(phrase).unwrap();
         let signer = m.to_ethereum_signer("", 0).unwrap();
         let addr = signer.address_checksum();
-        assert!(addr.starts_with("0x"), "ETH address must start with 0x: {addr}");
+        assert!(
+            addr.starts_with("0x"),
+            "ETH address must start with 0x: {addr}"
+        );
         assert_eq!(addr.len(), 42, "ETH address must be 42 chars");
 
         // Second account should produce a different address
         let signer1 = m.to_ethereum_signer("", 1).unwrap();
         let addr1 = signer1.address_checksum();
-        assert_ne!(addr, addr1, "different account indices → different addresses");
+        assert_ne!(
+            addr, addr1,
+            "different account indices → different addresses"
+        );
     }
 
     #[cfg(feature = "bitcoin")]

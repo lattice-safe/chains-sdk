@@ -516,12 +516,11 @@ impl NeoTransaction {
             pos += 1;
             let (attr_len, c) = read_var_int(&data[pos..])?;
             pos += c;
-            let attr_len_usize = usize::try_from(attr_len).map_err(|_| {
-                SignerError::ParseError("neo tx: attr length exceeds usize".into())
-            })?;
-            let attr_end = pos.checked_add(attr_len_usize).ok_or_else(|| {
-                SignerError::ParseError("neo tx: attr length overflow".into())
-            })?;
+            let attr_len_usize = usize::try_from(attr_len)
+                .map_err(|_| SignerError::ParseError("neo tx: attr length exceeds usize".into()))?;
+            let attr_end = pos
+                .checked_add(attr_len_usize)
+                .ok_or_else(|| SignerError::ParseError("neo tx: attr length overflow".into()))?;
             if attr_end > data.len() {
                 return Err(SignerError::ParseError(
                     "neo tx: truncated attr data".into(),
@@ -538,12 +537,11 @@ impl NeoTransaction {
         // Script
         let (script_len, consumed) = read_var_int(&data[pos..])?;
         pos += consumed;
-        let script_len_usize = usize::try_from(script_len).map_err(|_| {
-            SignerError::ParseError("neo tx: script length exceeds usize".into())
-        })?;
-        let script_end = pos.checked_add(script_len_usize).ok_or_else(|| {
-            SignerError::ParseError("neo tx: script length overflow".into())
-        })?;
+        let script_len_usize = usize::try_from(script_len)
+            .map_err(|_| SignerError::ParseError("neo tx: script length exceeds usize".into()))?;
+        let script_end = pos
+            .checked_add(script_len_usize)
+            .ok_or_else(|| SignerError::ParseError("neo tx: script length overflow".into()))?;
         if script_end > data.len() {
             return Err(SignerError::ParseError("neo tx: truncated script".into()));
         }

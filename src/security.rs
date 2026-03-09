@@ -33,8 +33,8 @@ const fn nibble_to_hex(n: u8) -> u8 {
     // If n >= 10, offset should be b'a' - 10 = 87; otherwise b'0' = 48.
     // Compute mask: 0xFF if n >= 10, 0x00 otherwise (branchless).
     let ge_10 = (9u8.wrapping_sub(n)) >> 7; // 1 if n >= 10, 0 otherwise
-    let mask = ge_10.wrapping_neg();           // 0xFF if n >= 10, 0x00 otherwise
-    // Select offset: (87 & mask) | (48 & !mask)
+    let mask = ge_10.wrapping_neg(); // 0xFF if n >= 10, 0x00 otherwise
+                                     // Select offset: (87 & mask) | (48 & !mask)
     let offset = (87 & mask) | (48 & !mask);
     n.wrapping_add(offset)
 }
@@ -139,7 +139,9 @@ impl GuardedMemory {
         let boxed: Box<[u8]> = vec![0u8; size].into_boxed_slice();
         #[cfg(feature = "mlock")]
         lock_memory(boxed.as_ptr(), boxed.len());
-        Self { inner: Zeroizing::new(boxed) }
+        Self {
+            inner: Zeroizing::new(boxed),
+        }
     }
 
     /// Create from existing data (takes ownership, original is NOT zeroized).
@@ -151,7 +153,9 @@ impl GuardedMemory {
         let boxed: Box<[u8]> = data.into_boxed_slice();
         #[cfg(feature = "mlock")]
         lock_memory(boxed.as_ptr(), boxed.len());
-        Self { inner: Zeroizing::new(boxed) }
+        Self {
+            inner: Zeroizing::new(boxed),
+        }
     }
 }
 
@@ -257,9 +261,8 @@ pub fn secure_random(buf: &mut [u8]) -> Result<(), crate::error::SignerError> {
         if let Some(f) = CUSTOM_RNG.get() {
             f(buf)
         } else {
-            getrandom::getrandom(buf).map_err(|e| {
-                crate::error::SignerError::SigningFailed(format!("RNG failed: {e}"))
-            })
+            getrandom::getrandom(buf)
+                .map_err(|e| crate::error::SignerError::SigningFailed(format!("RNG failed: {e}")))
         }
     }
 }

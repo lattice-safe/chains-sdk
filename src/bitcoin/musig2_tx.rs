@@ -53,10 +53,7 @@ pub fn aggregate_taproot_key(
     let internal_key = key_agg_ctx.x_only_pubkey;
 
     let merkle_root = tap_tree.map(|t| t.merkle_root());
-    let (output_key, parity) = taproot_tweak(
-        &internal_key,
-        merkle_root.as_ref(),
-    )?;
+    let (output_key, parity) = taproot_tweak(&internal_key, merkle_root.as_ref())?;
 
     Ok(TaprootKeyAgg {
         key_agg_ctx,
@@ -96,10 +93,7 @@ pub fn create_signing_session(
     let sighash = taproot_key_path_sighash(tx, input_idx, prevouts, sighash_type)?;
 
     let merkle_root = tap_tree.map(|t| t.merkle_root());
-    let tweak_bytes = tweak::compute_taproot_tweak(
-        &key_agg.internal_key,
-        merkle_root.as_ref(),
-    );
+    let tweak_bytes = tweak::compute_taproot_tweak(&key_agg.internal_key, merkle_root.as_ref());
 
     Ok(SigningSession {
         sighash,
@@ -301,7 +295,8 @@ mod tests {
         let ps2 = musig2::sign(sec2, &SK2, &agg.key_agg_ctx, &agg_nonce, &sighash).unwrap();
 
         // Aggregate
-        let sig_bytes = aggregate_signatures(&[ps1, ps2], &agg_nonce, &agg.key_agg_ctx, &sighash).unwrap();
+        let sig_bytes =
+            aggregate_signatures(&[ps1, ps2], &agg_nonce, &agg.key_agg_ctx, &sighash).unwrap();
         assert_eq!(sig_bytes.len(), 64);
 
         // Build witness

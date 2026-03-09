@@ -106,10 +106,7 @@ impl PackedUserOperation {
     ///
     /// `verificationGasLimit (16 bytes) || callGasLimit (16 bytes)`
     #[must_use]
-    pub fn pack_account_gas_limits(
-        verification_gas_limit: u128,
-        call_gas_limit: u128,
-    ) -> [u8; 32] {
+    pub fn pack_account_gas_limits(verification_gas_limit: u128, call_gas_limit: u128) -> [u8; 32] {
         let mut buf = [0u8; 32];
         buf[..16].copy_from_slice(&verification_gas_limit.to_be_bytes());
         buf[16..].copy_from_slice(&call_gas_limit.to_be_bytes());
@@ -154,18 +151,15 @@ impl PackedUserOperation {
 ///
 /// Deployed at the same address on all EVM chains.
 pub const ENTRY_POINT_V07: [u8; 20] = [
-    0x00, 0x00, 0x00, 0x00, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
 ];
 
 /// ABI-encode `handleOps(PackedUserOperation[], address beneficiary)` for EntryPoint v0.7.
 ///
 /// This is the function called by bundlers to submit user operations.
 #[must_use]
-pub fn encode_handle_ops(
-    ops: &[PackedUserOperation],
-    beneficiary: [u8; 20],
-) -> Vec<u8> {
+pub fn encode_handle_ops(ops: &[PackedUserOperation], beneficiary: [u8; 20]) -> Vec<u8> {
     let func = abi::Function::new(
         "handleOps((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes)[],address)",
     );
@@ -601,8 +595,16 @@ mod tests {
     #[test]
     fn test_encode_execute_batch_multiple() {
         let calls = vec![
-            ExecuteCall { target: [0xAA; 20], value: 100, data: vec![0x01] },
-            ExecuteCall { target: [0xBB; 20], value: 200, data: vec![0x02] },
+            ExecuteCall {
+                target: [0xAA; 20],
+                value: 100,
+                data: vec![0x01],
+            },
+            ExecuteCall {
+                target: [0xBB; 20],
+                value: 200,
+                data: vec![0x02],
+            },
         ];
         let calldata = encode_execute_batch(&calls);
         assert!(calldata.len() > 4);

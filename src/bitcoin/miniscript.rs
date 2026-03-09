@@ -111,10 +111,10 @@ impl Policy {
                 if subs.is_empty() {
                     return Err(SignerError::ParseError("empty AND policy".into()));
                 }
-                let compiled: Vec<Miniscript> = subs
-                    .iter()
-                    .map(|p| p.compile())
-                    .collect::<Result<Vec<_>, _>>()?;
+                let compiled: Vec<Miniscript> =
+                    subs.iter()
+                        .map(|p| p.compile())
+                        .collect::<Result<Vec<_>, _>>()?;
                 let mut iter = compiled.into_iter();
                 let first = iter.next().expect("non-empty");
                 Ok(iter.fold(first, |acc, ms| {
@@ -126,10 +126,10 @@ impl Policy {
                 if subs.is_empty() {
                     return Err(SignerError::ParseError("empty OR policy".into()));
                 }
-                let compiled: Vec<Miniscript> = subs
-                    .iter()
-                    .map(|p| p.compile())
-                    .collect::<Result<Vec<_>, _>>()?;
+                let compiled: Vec<Miniscript> =
+                    subs.iter()
+                        .map(|p| p.compile())
+                        .collect::<Result<Vec<_>, _>>()?;
                 let mut iter = compiled.into_iter();
                 let first = iter.next().expect("non-empty");
                 Ok(iter.fold(first, |acc, ms| {
@@ -143,9 +143,10 @@ impl Policy {
                     return Err(SignerError::ParseError("empty threshold".into()));
                 }
                 if k == 0 || k > subs.len() {
-                    return Err(SignerError::ParseError(
-                        format!("invalid threshold {k} of {}", subs.len()),
-                    ));
+                    return Err(SignerError::ParseError(format!(
+                        "invalid threshold {k} of {}",
+                        subs.len()
+                    )));
                 }
 
                 // Special cases: all keys → OP_CHECKMULTISIG
@@ -346,8 +347,8 @@ impl Miniscript {
     /// Maximum number of witness stack elements needed to satisfy this fragment.
     pub fn max_satisfaction_witness_elements(&self) -> usize {
         match self {
-            Miniscript::Pk(_) => 1,         // signature
-            Miniscript::PkH(_) => 2,        // sig + pubkey
+            Miniscript::Pk(_) => 1,                           // signature
+            Miniscript::PkH(_) => 2,                          // sig + pubkey
             Miniscript::Older(_) | Miniscript::After(_) => 0, // sequence/locktime
             Miniscript::Sha256(_) | Miniscript::Ripemd160(_) | Miniscript::Hash160(_) => 1, // preimage
             Miniscript::AndV(l, r) => {
@@ -359,11 +360,10 @@ impl Miniscript {
                     + 1 // branch selector
             }
             Miniscript::ThreshM(k, _) => k + 1, // k sigs + dummy OP_0
-            Miniscript::Thresh(_, subs) => {
-                subs.iter()
-                    .map(|s| s.max_satisfaction_witness_elements())
-                    .sum::<usize>()
-            }
+            Miniscript::Thresh(_, subs) => subs
+                .iter()
+                .map(|s| s.max_satisfaction_witness_elements())
+                .sum::<usize>(),
             Miniscript::True | Miniscript::False => 0,
         }
     }
@@ -371,23 +371,20 @@ impl Miniscript {
     /// Maximum witness size in bytes (approximate).
     pub fn max_satisfaction_size(&self) -> usize {
         match self {
-            Miniscript::Pk(_) => 73,        // DER sig (72 max) + sighash byte
-            Miniscript::PkH(_) => 73 + 34,  // sig + compact-push + pubkey
+            Miniscript::Pk(_) => 73,       // DER sig (72 max) + sighash byte
+            Miniscript::PkH(_) => 73 + 34, // sig + compact-push + pubkey
             Miniscript::Older(_) | Miniscript::After(_) => 0,
-            Miniscript::Sha256(_) => 33,    // 32-byte preimage + push
+            Miniscript::Sha256(_) => 33, // 32-byte preimage + push
             Miniscript::Ripemd160(_) | Miniscript::Hash160(_) => 33,
-            Miniscript::AndV(l, r) => {
-                l.max_satisfaction_size() + r.max_satisfaction_size()
-            }
+            Miniscript::AndV(l, r) => l.max_satisfaction_size() + r.max_satisfaction_size(),
             Miniscript::OrB(l, r) | Miniscript::OrI(l, r) => {
                 l.max_satisfaction_size().max(r.max_satisfaction_size()) + 1
             }
             Miniscript::ThreshM(k, _) => 1 + k * 73, // OP_0 + k signatures
-            Miniscript::Thresh(_, subs) => {
-                subs.iter()
-                    .map(|s| s.max_satisfaction_size())
-                    .sum::<usize>()
-            }
+            Miniscript::Thresh(_, subs) => subs
+                .iter()
+                .map(|s| s.max_satisfaction_size())
+                .sum::<usize>(),
             Miniscript::True | Miniscript::False => 0,
         }
     }
@@ -509,9 +506,10 @@ mod tests {
 
     #[test]
     fn test_policy_threshold_all_keys() {
-        let policy = Policy::Threshold(2, vec![
-            Policy::Key(KEY1), Policy::Key(KEY2), Policy::Key(KEY3),
-        ]);
+        let policy = Policy::Threshold(
+            2,
+            vec![Policy::Key(KEY1), Policy::Key(KEY2), Policy::Key(KEY3)],
+        );
         let ms = policy.compile().unwrap();
         assert!(matches!(ms, Miniscript::ThreshM(2, _)));
     }
@@ -543,12 +541,18 @@ mod tests {
 
     #[test]
     fn test_policy_threshold_k_zero_errors() {
-        assert!(Policy::Threshold(0, vec![Policy::Key(KEY1)]).compile().is_err());
+        assert!(Policy::Threshold(0, vec![Policy::Key(KEY1)])
+            .compile()
+            .is_err());
     }
 
     #[test]
     fn test_policy_threshold_k_exceeds_n_errors() {
-        assert!(Policy::Threshold(3, vec![Policy::Key(KEY1), Policy::Key(KEY2)]).compile().is_err());
+        assert!(
+            Policy::Threshold(3, vec![Policy::Key(KEY1), Policy::Key(KEY2)])
+                .compile()
+                .is_err()
+        );
     }
 
     // ─── Script Encoding ────────────────────────────────────────
@@ -611,7 +615,7 @@ mod tests {
     fn test_thresh_m_2_of_3_script() {
         let script = Miniscript::ThreshM(2, vec![KEY1, KEY2, KEY3]).encode();
         assert_eq!(script[0], 0x52); // OP_2
-        // 3 keys × (1 push + 33 bytes)
+                                     // 3 keys × (1 push + 33 bytes)
         assert_eq!(script[1], 33);
         assert_eq!(script[1 + 34], 33);
         assert_eq!(script[1 + 68], 33);
@@ -689,7 +693,10 @@ mod tests {
 
     #[test]
     fn test_pkh_witness_elements() {
-        assert_eq!(Miniscript::PkH(HASH20).max_satisfaction_witness_elements(), 2);
+        assert_eq!(
+            Miniscript::PkH(HASH20).max_satisfaction_witness_elements(),
+            2
+        );
     }
 
     #[test]
@@ -718,11 +725,10 @@ mod tests {
 
     #[test]
     fn test_e2e_2_of_3_policy_to_script() {
-        let policy = Policy::Threshold(2, vec![
-            Policy::Key(KEY1),
-            Policy::Key(KEY2),
-            Policy::Key(KEY3),
-        ]);
+        let policy = Policy::Threshold(
+            2,
+            vec![Policy::Key(KEY1), Policy::Key(KEY2), Policy::Key(KEY3)],
+        );
         let ms = policy.compile().unwrap();
         let script = ms.encode();
         // Should be a valid OP_CHECKMULTISIG script
@@ -732,10 +738,7 @@ mod tests {
 
     #[test]
     fn test_e2e_key_and_timelock() {
-        let policy = Policy::And(vec![
-            Policy::Key(KEY1),
-            Policy::After(800_000),
-        ]);
+        let policy = Policy::And(vec![Policy::Key(KEY1), Policy::After(800_000)]);
         let ms = policy.compile().unwrap();
         let script = ms.encode();
         assert!(script.contains(&op::OP_CHECKSIG));
@@ -746,14 +749,8 @@ mod tests {
     fn test_e2e_htlc_like_policy() {
         // hashlock OR (key + timelock) — typical HTLC
         let policy = Policy::Or(vec![
-            Policy::And(vec![
-                Policy::Sha256(HASH32),
-                Policy::Key(KEY1),
-            ]),
-            Policy::And(vec![
-                Policy::Key(KEY2),
-                Policy::After(700_000),
-            ]),
+            Policy::And(vec![Policy::Sha256(HASH32), Policy::Key(KEY1)]),
+            Policy::And(vec![Policy::Key(KEY2), Policy::After(700_000)]),
         ]);
         let ms = policy.compile().unwrap();
         let script = ms.encode();

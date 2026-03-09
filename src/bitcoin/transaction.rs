@@ -235,9 +235,9 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         off += 4;
 
         let script_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
-        let script_end = off.checked_add(script_len).ok_or_else(|| {
-            SignerError::ParseError("tx: scriptSig length overflow".into())
-        })?;
+        let script_end = off
+            .checked_add(script_len)
+            .ok_or_else(|| SignerError::ParseError("tx: scriptSig length overflow".into()))?;
         if script_end > data.len() {
             return Err(SignerError::ParseError("tx truncated in scriptSig".into()));
         }
@@ -273,9 +273,9 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         off += 8;
 
         let spk_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
-        let spk_end = off.checked_add(spk_len).ok_or_else(|| {
-            SignerError::ParseError("tx: scriptPubKey length overflow".into())
-        })?;
+        let spk_end = off
+            .checked_add(spk_len)
+            .ok_or_else(|| SignerError::ParseError("tx: scriptPubKey length overflow".into()))?;
         if spk_end > data.len() {
             return Err(SignerError::ParseError(
                 "tx truncated in scriptPubKey".into(),

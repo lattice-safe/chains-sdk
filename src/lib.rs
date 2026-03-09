@@ -35,8 +35,6 @@ pub mod xrp;
 #[cfg(feature = "solana")]
 pub mod solana;
 
-
-
 #[cfg(feature = "hd_key")]
 pub mod hd_key;
 

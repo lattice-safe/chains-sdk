@@ -1060,7 +1060,8 @@ impl Message {
                 "message: num_required_signatures exceeds account count".into(),
             ));
         }
-        if (num_readonly_signed_accounts as u16) + (num_readonly_unsigned_accounts as u16) > num_keys
+        if (num_readonly_signed_accounts as u16) + (num_readonly_unsigned_accounts as u16)
+            > num_keys
         {
             return Err(SignerError::ParseError(
                 "message: readonly counts exceed account count".into(),

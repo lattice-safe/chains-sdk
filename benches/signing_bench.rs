@@ -88,7 +88,9 @@ fn bench_solana(c: &mut Criterion) {
 }
 
 fn bench_bls(c: &mut Criterion) {
-    use chains_sdk::ethereum::bls::{aggregate_signatures, verify_aggregated, BlsSigner, BlsVerifier};
+    use chains_sdk::ethereum::bls::{
+        aggregate_signatures, verify_aggregated, BlsSigner, BlsVerifier,
+    };
     use chains_sdk::traits::{KeyPair, Signer, Verifier};
 
     let signer = BlsSigner::generate().unwrap();

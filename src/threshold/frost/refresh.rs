@@ -182,7 +182,6 @@ pub fn verify_refresh_package(pkg: &RefreshPackage) -> bool {
 mod tests {
     use super::*;
     use crate::threshold::frost::signing;
-    
 
     #[test]
     fn test_refresh_preserves_group_key() {

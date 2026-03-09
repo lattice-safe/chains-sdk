@@ -13,7 +13,6 @@
 
 use crate::error::SignerError;
 
-
 /// Keccak-256 hash — delegates to the canonical implementation in `super::keccak256`.
 ///
 /// Re-exported here because this file is used outside the ethereum module too.

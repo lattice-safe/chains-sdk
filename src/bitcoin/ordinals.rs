@@ -363,29 +363,26 @@ mod tests {
     #[test]
     fn test_inscription_with_parent() {
         let parent = InscriptionId::new([0xAA; 32], 0);
-        let ins = Inscription::new("text/plain", b"child")
-            .with_parent(parent.clone());
+        let ins = Inscription::new("text/plain", b"child").with_parent(parent.clone());
         assert_eq!(ins.parent.unwrap().txid, [0xAA; 32]);
     }
 
     #[test]
     fn test_inscription_with_metadata() {
-        let ins = Inscription::new("text/plain", b"x")
-            .with_metadata(vec![0xA1, 0x63, 0x66, 0x6F, 0x6F]); // CBOR: {"foo"}
+        let ins =
+            Inscription::new("text/plain", b"x").with_metadata(vec![0xA1, 0x63, 0x66, 0x6F, 0x6F]); // CBOR: {"foo"}
         assert!(ins.metadata.is_some());
     }
 
     #[test]
     fn test_inscription_with_metaprotocol() {
-        let ins = Inscription::new("text/plain", b"x")
-            .with_metaprotocol("brc-20");
+        let ins = Inscription::new("text/plain", b"x").with_metaprotocol("brc-20");
         assert_eq!(ins.metaprotocol.as_deref(), Some("brc-20"));
     }
 
     #[test]
     fn test_inscription_with_content_encoding() {
-        let ins = Inscription::new("text/plain", b"x")
-            .with_content_encoding("br");
+        let ins = Inscription::new("text/plain", b"x").with_content_encoding("br");
         assert_eq!(ins.content_encoding.as_deref(), Some("br"));
     }
 
@@ -437,7 +434,10 @@ mod tests {
         let script = ins.to_tapscript();
         // Script should contain OP_PUSHDATA2 for 520-byte chunks
         let pushdata2_count = script.iter().filter(|&&b| b == 0x4D).count();
-        assert_eq!(pushdata2_count, 2, "should have 2 OP_PUSHDATA2 for 1040 bytes");
+        assert_eq!(
+            pushdata2_count, 2,
+            "should have 2 OP_PUSHDATA2 for 1040 bytes"
+        );
     }
 
     #[test]
@@ -450,16 +450,14 @@ mod tests {
     #[test]
     fn test_tapscript_with_parent() {
         let parent = InscriptionId::new([0xFF; 32], 5);
-        let ins = Inscription::new("text/plain", b"child")
-            .with_parent(parent);
+        let ins = Inscription::new("text/plain", b"child").with_parent(parent);
         let script = ins.to_tapscript();
         assert!(script.contains(&TAG_PARENT));
     }
 
     #[test]
     fn test_tapscript_with_metaprotocol() {
-        let ins = Inscription::new("text/plain", b"x")
-            .with_metaprotocol("brc-20");
+        let ins = Inscription::new("text/plain", b"x").with_metaprotocol("brc-20");
         let script = ins.to_tapscript();
         assert!(script.contains(&TAG_METAPROTOCOL));
         let has_brc20 = script.windows(6).any(|w| w == b"brc-20");

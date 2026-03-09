@@ -66,11 +66,7 @@ impl Label {
 ///
 /// Encodes as `{hrp}:{version_hex}{scan_pubkey_hex}{spend_pubkey_hex}`.
 #[must_use]
-pub fn create_address(
-    scan_pubkey: &[u8; 33],
-    spend_pubkey: &[u8; 33],
-    hrp: &str,
-) -> String {
+pub fn create_address(scan_pubkey: &[u8; 33], spend_pubkey: &[u8; 33], hrp: &str) -> String {
     let mut payload = [0u8; 67];
     payload[0] = 0x00; // version 0
     payload[1..34].copy_from_slice(scan_pubkey);
@@ -83,7 +79,8 @@ pub fn create_address(
 /// Extracts the scan and spend public keys from the address format `{hrp}:{payload_hex}`.
 #[must_use = "parsed address should be used"]
 pub fn parse_address(address: &str) -> Result<SilentPaymentAddress, SignerError> {
-    let sep_pos = address.find(':')
+    let sep_pos = address
+        .find(':')
         .ok_or_else(|| SignerError::ParseError("no separator in SP address".into()))?;
 
     let data_part = &address[sep_pos + 1..];
@@ -91,15 +88,17 @@ pub fn parse_address(address: &str) -> Result<SilentPaymentAddress, SignerError>
         .map_err(|_| SignerError::ParseError("invalid SP address hex".into()))?;
 
     if payload.len() < 67 {
-        return Err(SignerError::ParseError(
-            format!("SP payload too short: {} < 67", payload.len()),
-        ));
+        return Err(SignerError::ParseError(format!(
+            "SP payload too short: {} < 67",
+            payload.len()
+        )));
     }
 
     if payload[0] != 0x00 {
-        return Err(SignerError::ParseError(
-            format!("unsupported SP version: {}", payload[0]),
-        ));
+        return Err(SignerError::ParseError(format!(
+            "unsupported SP version: {}",
+            payload[0]
+        )));
     }
 
     let mut scan = [0u8; 33];

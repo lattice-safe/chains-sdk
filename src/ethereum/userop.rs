@@ -19,23 +19,19 @@
 use crate::ethereum::abi::{self, AbiValue};
 use crate::ethereum::keccak256;
 
-
-
 // ═══════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
 /// EntryPoint v0.6 address (ERC-4337).
 pub const ENTRY_POINT_V06: [u8; 20] = [
-    0x5f, 0xf1, 0x37, 0xd4, 0xb0, 0xfd, 0xcd, 0x49,
-    0xdc, 0xa3, 0x0c, 0x7c, 0xf5, 0x7e, 0x57, 0x8a,
+    0x5f, 0xf1, 0x37, 0xd4, 0xb0, 0xfd, 0xcd, 0x49, 0xdc, 0xa3, 0x0c, 0x7c, 0xf5, 0x7e, 0x57, 0x8a,
     0x02, 0x6d, 0x27, 0x89,
 ];
 
 /// EntryPoint v0.7 address.
 pub const ENTRY_POINT_V07: [u8; 20] = [
-    0x00, 0x00, 0x00, 0x71, 0x72, 0x7d, 0xe2, 0x2e,
-    0x5e, 0x94, 0x87, 0xd0, 0x7b, 0x26, 0x00, 0xf6,
+    0x00, 0x00, 0x00, 0x71, 0x72, 0x7d, 0xe2, 0x2e, 0x5e, 0x94, 0x87, 0xd0, 0x7b, 0x26, 0x00, 0xf6,
     0xbc, 0x22, 0x30, 0xb0,
 ];
 
@@ -232,11 +228,7 @@ pub fn encode_execute(dest: &[u8; 20], value: u64, func: &[u8]) -> Vec<u8> {
 ///
 /// Batch execution for multiple calls in a single UserOp.
 #[must_use]
-pub fn encode_execute_batch(
-    targets: &[[u8; 20]],
-    values: &[u64],
-    data: &[Vec<u8>],
-) -> Vec<u8> {
+pub fn encode_execute_batch(targets: &[[u8; 20]], values: &[u64], data: &[Vec<u8>]) -> Vec<u8> {
     let batch = abi::Function::new("executeBatch(address[],uint256[],bytes[])");
 
     let targets_abi: Vec<AbiValue> = targets.iter().map(|t| AbiValue::Address(*t)).collect();
@@ -254,20 +246,14 @@ pub fn encode_execute_batch(
 #[must_use]
 pub fn encode_erc20_approve(spender: &[u8; 20], amount: u64) -> Vec<u8> {
     let approve = abi::Function::new("approve(address,uint256)");
-    approve.encode(&[
-        AbiValue::Address(*spender),
-        AbiValue::from_u64(amount),
-    ])
+    approve.encode(&[AbiValue::Address(*spender), AbiValue::from_u64(amount)])
 }
 
 /// Encode an ERC-20 `transfer(address to, uint256 amount)` call.
 #[must_use]
 pub fn encode_erc20_transfer(to: &[u8; 20], amount: u64) -> Vec<u8> {
     let transfer = abi::Function::new("transfer(address,uint256)");
-    transfer.encode(&[
-        AbiValue::Address(*to),
-        AbiValue::from_u64(amount),
-    ])
+    transfer.encode(&[AbiValue::Address(*to), AbiValue::from_u64(amount)])
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -326,7 +312,10 @@ mod tests {
         let op = UserOperation::new(SENDER);
         let h1 = op.hash(&ENTRY_POINT_V06, 1);
         let h2 = op.hash(&ENTRY_POINT_V07, 1);
-        assert_ne!(h1, h2, "different entry points should produce different hashes");
+        assert_ne!(
+            h1, h2,
+            "different entry points should produce different hashes"
+        );
     }
 
     #[test]
@@ -335,10 +324,7 @@ mod tests {
         let mut op2 = UserOperation::new(SENDER);
         op1.nonce = 0;
         op2.nonce = 1;
-        assert_ne!(
-            op1.hash(&ENTRY_POINT_V06, 1),
-            op2.hash(&ENTRY_POINT_V06, 1),
-        );
+        assert_ne!(op1.hash(&ENTRY_POINT_V06, 1), op2.hash(&ENTRY_POINT_V06, 1),);
     }
 
     #[test]
@@ -347,10 +333,7 @@ mod tests {
         let mut op2 = UserOperation::new(SENDER);
         op1.call_data = vec![0x01];
         op2.call_data = vec![0x02];
-        assert_ne!(
-            op1.hash(&ENTRY_POINT_V06, 1),
-            op2.hash(&ENTRY_POINT_V06, 1),
-        );
+        assert_ne!(op1.hash(&ENTRY_POINT_V06, 1), op2.hash(&ENTRY_POINT_V06, 1),);
     }
 
     #[test]

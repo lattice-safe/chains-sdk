@@ -52,17 +52,17 @@ pub fn multisig_redeem_script(
         return Err(SignerError::ParseError("no public keys provided".into()));
     }
     if n > MAX_MULTISIG_KEYS {
-        return Err(SignerError::ParseError(
-            format!("too many public keys: {n} (max {MAX_MULTISIG_KEYS})"),
-        ));
+        return Err(SignerError::ParseError(format!(
+            "too many public keys: {n} (max {MAX_MULTISIG_KEYS})"
+        )));
     }
     if threshold == 0 {
         return Err(SignerError::ParseError("threshold must be >= 1".into()));
     }
     if threshold > n {
-        return Err(SignerError::ParseError(
-            format!("threshold {threshold} exceeds key count {n}"),
-        ));
+        return Err(SignerError::ParseError(format!(
+            "threshold {threshold} exceeds key count {n}"
+        )));
     }
 
     // OP_m (OP_1..OP_16)
@@ -82,12 +82,10 @@ pub fn multisig_redeem_script(
     script.push(0xAE); // OP_CHECKMULTISIG
 
     if script.len() > MAX_REDEEM_SCRIPT_SIZE {
-        return Err(SignerError::ParseError(
-            format!(
-                "redeem script too large: {} bytes (max {MAX_REDEEM_SCRIPT_SIZE})",
-                script.len()
-            ),
-        ));
+        return Err(SignerError::ParseError(format!(
+            "redeem script too large: {} bytes (max {MAX_REDEEM_SCRIPT_SIZE})",
+            script.len()
+        )));
     }
 
     Ok(script)
@@ -384,7 +382,7 @@ mod tests {
         let hex_keys = [
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", // G point
             "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5", // 2G
-            "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",  // 3G
+            "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9", // 3G
         ];
         hex_keys
             .iter()
@@ -465,7 +463,7 @@ mod tests {
         let script = multisig_redeem_script(2, &keys).unwrap();
         // Byte-level verification: OP_2 <33> <pk1> <33> <pk2> <33> <pk3> OP_3 OP_CHECKMULTISIG
         assert_eq!(script[0], 0x52); // OP_2
-        assert_eq!(script[1], 33);   // push length
+        assert_eq!(script[1], 33); // push length
         assert_eq!(&script[2..35], &keys[0]);
         assert_eq!(script[35], 33);
         assert_eq!(&script[36..69], &keys[1]);
@@ -519,7 +517,11 @@ mod tests {
             for m in 1..=n {
                 let script = multisig_redeem_script(m, &keys).unwrap();
                 assert_eq!(script[0], 0x50 + m as u8, "OP_m for {m}-of-{n}");
-                assert_eq!(script[script.len() - 2], 0x50 + n as u8, "OP_n for {m}-of-{n}");
+                assert_eq!(
+                    script[script.len() - 2],
+                    0x50 + n as u8,
+                    "OP_n for {m}-of-{n}"
+                );
                 assert_eq!(script[script.len() - 1], 0xAE, "OP_CMS for {m}-of-{n}");
                 assert_eq!(script.len(), 3 + n * 34, "length for {m}-of-{n}");
 
@@ -1190,7 +1192,10 @@ mod tests {
         let keys = dummy_keys(2);
         let err = multisig_redeem_script(0, &keys).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("threshold") || msg.contains(">= 1"), "got: {msg}");
+        assert!(
+            msg.contains("threshold") || msg.contains(">= 1"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -1201,4 +1206,3 @@ mod tests {
         assert!(msg.contains("exceeds") || msg.contains("5"), "got: {msg}");
     }
 }
-
