@@ -32,7 +32,6 @@
 use super::rlp;
 use super::EthereumSigner;
 use crate::error::SignerError;
-use sha3::{Digest, Keccak256};
 
 // ─── Signed Transaction ────────────────────────────────────────────
 
@@ -55,9 +54,7 @@ impl SignedTransaction {
     /// Compute the transaction hash (keccak256 of the raw signed tx).
     #[must_use]
     pub fn tx_hash(&self) -> [u8; 32] {
-        let mut out = [0u8; 32];
-        out.copy_from_slice(&Keccak256::digest(&self.raw));
-        out
+        keccak256(&self.raw)
     }
 
     /// Return the raw transaction as a `0x`-prefixed hex string.
@@ -437,9 +434,7 @@ pub fn encode_is_valid_signature(hash: &[u8; 32], signature: &[u8]) -> Vec<u8> {
 // ─── Helpers ───────────────────────────────────────────────────────
 
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&Keccak256::digest(data));
-    out
+    super::keccak256(data)
 }
 
 fn encode_address(to: &Option<[u8; 20]>) -> Vec<u8> {

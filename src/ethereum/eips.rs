@@ -12,12 +12,13 @@
 //! - **EIP-2335**: BLS12-381 keystore path constants
 
 use crate::error::SignerError;
-use sha3::{Digest, Keccak256};
 
+
+/// Keccak-256 hash — delegates to the canonical implementation in `super::keccak256`.
+///
+/// Re-exported here because this file is used outside the ethereum module too.
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&Keccak256::digest(data));
-    out
+    super::keccak256(data)
 }
 
 // ═══════════════════════════════════════════════════════════════════

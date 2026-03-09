@@ -26,7 +26,6 @@
 //! ```
 
 use crate::error::SignerError;
-use sha3::{Digest, Keccak256};
 
 // ─── ABI Values ────────────────────────────────────────────────────
 
@@ -468,9 +467,7 @@ impl ContractCall {
 // ─── Internal Helpers ──────────────────────────────────────────────
 
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&Keccak256::digest(data));
-    out
+    super::keccak256(data)
 }
 
 fn encode_dynamic_bytes(data: &[u8]) -> Vec<u8> {

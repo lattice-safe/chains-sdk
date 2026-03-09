@@ -34,7 +34,6 @@
 
 use crate::error::SignerError;
 use crate::ethereum::abi::{self, AbiValue};
-use sha3::{Digest, Keccak256};
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -606,9 +605,7 @@ pub fn encode_create_proxy_with_nonce(
 // ─── Internal Helpers ──────────────────────────────────────────────
 
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak256::new();
-    hasher.update(data);
-    hasher.finalize().into()
+    super::keccak256(data)
 }
 
 fn pad_address(addr: &[u8; 20]) -> [u8; 32] {

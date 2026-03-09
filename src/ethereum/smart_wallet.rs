@@ -27,7 +27,6 @@
 
 use crate::error::SignerError;
 use crate::ethereum::abi::{self, AbiValue};
-use sha3::{Digest, Keccak256};
 
 // ─── EIP-4337 v0.7 Packed User Operation ───────────────────────────
 
@@ -359,9 +358,7 @@ pub fn encode_get_nonce(sender: [u8; 20], key: u64) -> Vec<u8> {
 // ─── Internal Helpers ──────────────────────────────────────────────
 
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak256::new();
-    hasher.update(data);
-    hasher.finalize().into()
+    super::keccak256(data)
 }
 
 fn pad_address(addr: &[u8; 20]) -> [u8; 32] {

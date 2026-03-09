@@ -9,7 +9,6 @@
 use crate::error::SignerError;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use core::fmt;
-use sha3::{Digest, Keccak256};
 use zeroize::Zeroizing;
 
 /// AES-128-CTR cipher type alias.
@@ -230,9 +229,7 @@ fn derive_scrypt_key(
 }
 
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&Keccak256::digest(data));
-    out
+    super::keccak256(data)
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────
