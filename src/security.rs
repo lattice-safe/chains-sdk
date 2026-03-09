@@ -359,7 +359,7 @@ pub trait EnclaveContext {
 /// Returns `(new_key, old_public_key)` — the old private key is zeroized.
 ///
 /// # Example
-/// ```ignore
+/// ```no_run
 /// use chains_sdk::security::rotate_key;
 /// use chains_sdk::ethereum::EthereumSigner;
 /// use chains_sdk::traits::{KeyPair, Signer};

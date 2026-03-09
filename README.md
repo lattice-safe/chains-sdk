@@ -228,20 +228,18 @@ let sig = signer.sign(b"neo data")?;
 ## BLS (BLS12-381 Aggregated Signatures)
 
 ```rust
-use chains_sdk::bls::{BlsSigner, BlsVerifier};
-use chains_sdk::traits::{KeyPair, Signer, Verifier};
+use chains_sdk::bls::{BlsSigner, aggregate_signatures, verify_aggregated};
+use chains_sdk::traits::{KeyPair, Signer};
 
 let signer1 = BlsSigner::generate()?;
 let signer2 = BlsSigner::generate()?;
 let sig1 = signer1.sign(b"consensus")?;
 let sig2 = signer2.sign(b"consensus")?;
 
-// Aggregate verification (N signatures, 1 verify call)
-let verifiers = vec![
-    BlsVerifier::from_public_key_bytes(&signer1.public_key_bytes())?,
-    BlsVerifier::from_public_key_bytes(&signer2.public_key_bytes())?,
-];
-assert!(BlsVerifier::verify_aggregated(b"consensus", &verifiers, &[sig1, sig2])?);
+// Aggregate signatures, then verify (N signers, 1 verify call)
+let agg_sig = aggregate_signatures(&[sig1, sig2])?;
+let pks = vec![signer1.public_key(), signer2.public_key()];
+assert!(verify_aggregated(&pks, b"consensus", &agg_sig)?);
 ```
 
 ---
@@ -416,11 +414,11 @@ use chains_sdk::traits::{KeyPair, Signer};
 let signer = BitcoinSigner::generate()?;
 let proof = message::sign_simple_p2wpkh(&signer, b"Hello World")?;
 
-// Verify
+// Verify (pass the raw proof bytes from sign)
 let pubkey = signer.public_key_bytes();
 let mut pk33 = [0u8; 33];
 pk33.copy_from_slice(&pubkey);
-let valid = message::verify_simple_p2wpkh(&pk33, b"Hello World", &signature_bytes)?;
+let valid = message::verify_simple_p2wpkh(&pk33, b"Hello World", &proof)?;
 
 // ── P2TR (Taproot / Schnorr) ──
 let schnorr_signer = SchnorrSigner::generate()?;
@@ -506,7 +504,7 @@ Run with `cargo bench --all-features`. Covers all chains + threshold signing:
 
 ## Security
 
-- `#![forbid(unsafe_code)]` — zero unsafe blocks
+- `#![deny(unsafe_code)]` — zero unsafe blocks in default builds (mlock feature has 3 justified exceptions)
 - `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` — zero panic surface
 - All ECDSA uses **RFC 6979** deterministic nonces (secp256k1 + P-256)
 - All key material wrapped in `Zeroizing` / `ZeroizeOnDrop`

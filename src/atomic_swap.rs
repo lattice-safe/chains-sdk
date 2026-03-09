@@ -10,7 +10,7 @@
 //! ```no_run
 //! use chains_sdk::atomic_swap::*;
 //!
-//! let secret = SwapSecret::generate();
+//! let secret = SwapSecret::generate()?;
 //! let params = HtlcParams {
 //!     hash_lock: secret.hash,
 //!     time_lock: 1_700_000_000,
@@ -24,6 +24,7 @@
 //! // Ethereum side
 //! let lock_data = encode_eth_htlc_lock(&params);
 //! let claim_data = encode_eth_htlc_claim(&secret.preimage);
+//! # Ok::<(), chains_sdk::error::SignerError>(())
 //! ```
 
 use crate::crypto;
