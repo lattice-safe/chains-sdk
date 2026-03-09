@@ -125,7 +125,7 @@ fn cmd_keygen(chain: &str) {
         #[cfg(feature = "bls")]
         "bls" => {
             use chains_sdk::traits::{KeyPair, Signer};
-            let signer = chains_sdk::bls::BlsSigner::generate().expect("keygen failed");
+            let signer = chains_sdk::ethereum::bls::BlsSigner::generate().expect("keygen failed");
             let pk = hex::encode(Signer::public_key_bytes(&signer));
             let sk = hex::encode(&*signer.private_key_bytes());
             println!("private_key: {sk}");
@@ -174,7 +174,7 @@ fn cmd_sign(chain: &str, hex_key: &str, message: &str) {
         #[cfg(feature = "bls")]
         "bls" => {
             use chains_sdk::traits::{KeyPair, Signer};
-            let signer = chains_sdk::bls::BlsSigner::from_bytes(&key_bytes).expect("invalid key");
+            let signer = chains_sdk::ethereum::bls::BlsSigner::from_bytes(&key_bytes).expect("invalid key");
             let sig = signer.sign(msg).expect("sign failed");
             println!("signature: {}", hex::encode(sig.to_bytes()));
         }
@@ -207,9 +207,9 @@ fn cmd_verify(chain: &str, hex_pubkey: &str, hex_sig: &str, message: &str) {
         #[cfg(feature = "bls")]
         "bls" => {
             use chains_sdk::traits::Verifier;
-            let verifier = chains_sdk::bls::BlsVerifier::from_public_key_bytes(&pk_bytes)
+            let verifier = chains_sdk::ethereum::bls::BlsVerifier::from_public_key_bytes(&pk_bytes)
                 .expect("invalid pubkey");
-            let sig = chains_sdk::bls::BlsSignature::from_bytes(&sig_bytes).expect("invalid sig");
+            let sig = chains_sdk::ethereum::bls::BlsSignature::from_bytes(&sig_bytes).expect("invalid sig");
             match verifier.verify(msg, &sig) {
                 Ok(true) => println!("✓ valid"),
                 _ => println!("✗ invalid"),

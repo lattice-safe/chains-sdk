@@ -246,7 +246,7 @@ mod xrp_serde {
 
 #[cfg(feature = "bls")]
 mod bls_serde {
-    use chains_sdk::bls::{BlsPublicKey, BlsSignature, BlsSigner};
+    use chains_sdk::ethereum::bls::{BlsPublicKey, BlsSignature, BlsSigner};
     use chains_sdk::traits::{KeyPair, Signer};
 
     #[test]
@@ -379,7 +379,7 @@ mod json_xrp {
 
 #[cfg(all(feature = "serde", feature = "bls"))]
 mod json_bls {
-    use chains_sdk::bls::{BlsPublicKey, BlsSignature, BlsSigner};
+    use chains_sdk::ethereum::bls::{BlsPublicKey, BlsSignature, BlsSigner};
     use chains_sdk::traits::{KeyPair, Signer};
 
     #[test]

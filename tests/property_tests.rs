@@ -81,7 +81,7 @@ mod bitcoin_props {
 #[cfg(feature = "bls")]
 mod bls_props {
     use super::*;
-    use chains_sdk::bls::BlsSigner;
+    use chains_sdk::ethereum::bls::BlsSigner;
     use chains_sdk::traits::{KeyPair, Signer, Verifier};
 
     proptest! {
@@ -89,7 +89,7 @@ mod bls_props {
         fn bls_sign_verify_roundtrip(msg in prop::collection::vec(any::<u8>(), 1..256)) {
             let signer = BlsSigner::generate().unwrap();
             let sig = signer.sign(&msg).unwrap();
-            let verifier = chains_sdk::bls::BlsVerifier::from_public_key_bytes(
+            let verifier = chains_sdk::ethereum::bls::BlsVerifier::from_public_key_bytes(
                 &Signer::public_key_bytes(&signer),
             ).unwrap();
             prop_assert!(verifier.verify(&msg, &sig).unwrap());

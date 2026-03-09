@@ -88,7 +88,7 @@ fn bench_solana(c: &mut Criterion) {
 }
 
 fn bench_bls(c: &mut Criterion) {
-    use chains_sdk::bls::{aggregate_signatures, verify_aggregated, BlsSigner, BlsVerifier};
+    use chains_sdk::ethereum::bls::{aggregate_signatures, verify_aggregated, BlsSigner, BlsVerifier};
     use chains_sdk::traits::{KeyPair, Signer, Verifier};
 
     let signer = BlsSigner::generate().unwrap();
@@ -119,7 +119,7 @@ fn bench_bls(c: &mut Criterion) {
 }
 
 fn bench_bls_threshold(c: &mut Criterion) {
-    use chains_sdk::bls::threshold;
+    use chains_sdk::ethereum::bls::threshold;
 
     let kgen = threshold::threshold_keygen(2, 3).unwrap();
     let msg = b"bls threshold bench";
@@ -141,7 +141,7 @@ fn bench_bls_threshold(c: &mut Criterion) {
 }
 
 fn bench_bls_eip2333(c: &mut Criterion) {
-    use chains_sdk::bls::eip2333;
+    use chains_sdk::ethereum::bls::eip2333;
 
     let seed = [0xABu8; 64];
     let master = eip2333::derive_master_sk(&seed).unwrap();

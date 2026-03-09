@@ -75,7 +75,7 @@ fn serde_neo_signature_roundtrip() {
 #[cfg(all(feature = "serde", feature = "bls"))]
 #[test]
 fn serde_bls_signature_roundtrip() {
-    use chains_sdk::bls::BlsSignature;
+    use chains_sdk::ethereum::bls::BlsSignature;
     let sig = BlsSignature { bytes: [0xAA; 96] };
     let json = serde_json::to_string(&sig).unwrap();
     let restored: BlsSignature = serde_json::from_str(&json).unwrap();
@@ -85,7 +85,7 @@ fn serde_bls_signature_roundtrip() {
 #[cfg(all(feature = "serde", feature = "bls"))]
 #[test]
 fn serde_bls_pubkey_roundtrip() {
-    use chains_sdk::bls::BlsPublicKey;
+    use chains_sdk::ethereum::bls::BlsPublicKey;
     let pk = BlsPublicKey { bytes: [0xBB; 48] };
     let json = serde_json::to_string(&pk).unwrap();
     let restored: BlsPublicKey = serde_json::from_str(&json).unwrap();

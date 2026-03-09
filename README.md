@@ -228,7 +228,7 @@ let sig = signer.sign(b"neo data")?;
 ## BLS (BLS12-381 Aggregated Signatures)
 
 ```rust
-use chains_sdk::bls::{BlsSigner, aggregate_signatures, verify_aggregated};
+use chains_sdk::ethereum::bls::{BlsSigner, aggregate_signatures, verify_aggregated};
 use chains_sdk::traits::{KeyPair, Signer};
 
 let signer1 = BlsSigner::generate()?;
@@ -598,7 +598,12 @@ src/
 │   ├── siwe.rs        # Sign-In with Ethereum (EIP-4361)
 │   ├── userop.rs      # ERC-4337 UserOperation encoding
 │   ├── permit2.rs     # Uniswap Permit2 (EIP-712 signatures)
-│   └── uniswap_v4.rs  # Uniswap V4 swap/pool encoding
+│   ├── uniswap_v4.rs  # Uniswap V4 swap/pool encoding
+│   └── bls/           # BLS12-381 Beacon Chain (PoS)
+│       ├── mod.rs     # BLS signing + aggregation
+│       ├── threshold.rs # BLS threshold (t-of-n) keygen + signing
+│       ├── eip2333.rs # EIP-2333 key derivation + EIP-2334 paths
+│       └── keystore.rs # EIP-2335 keystore (scrypt + AES-128-CTR)
 ├── solana/
 │   ├── mod.rs         # EdDSA signer, Base58 address
 │   ├── transaction.rs # SPL Token, System, Compute Budget
@@ -615,11 +620,6 @@ src/
 ├── neo/
 │   ├── transaction.rs # NeoVM scripts, NEP-17, tx builder
 │   └── witness.rs     # Witness serialization, NEP-11 NFT, GAS claim
-├── bls/
-│   ├── mod.rs         # BLS12-381 signing + aggregation
-│   ├── threshold.rs   # BLS threshold (t-of-n) keygen + signing
-│   ├── eip2333.rs     # EIP-2333 key derivation + EIP-2334 paths
-│   └── keystore.rs    # EIP-2335 keystore (scrypt + AES-128-CTR)
 ├── threshold/
 │   ├── frost/         # RFC 9591 T-of-N + identifiable abort + proactive refresh
 │   └── musig2/        # BIP-327 N-of-N + adaptor sigs + tweaks + nested trees

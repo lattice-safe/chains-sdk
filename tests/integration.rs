@@ -133,7 +133,7 @@ mod eip712_integration {
 
 #[cfg(feature = "bls")]
 mod bls_integration {
-    use chains_sdk::bls::{aggregate_signatures, verify_aggregated, BlsSigner};
+    use chains_sdk::ethereum::bls::{aggregate_signatures, verify_aggregated, BlsSigner};
     use chains_sdk::traits::{KeyPair, Signer};
 
     /// Aggregate 100 signatures and verify
@@ -611,7 +611,7 @@ mod bip322_vectors {
 
 #[cfg(feature = "bls")]
 mod bls_threshold_e2e {
-    use chains_sdk::bls::threshold;
+    use chains_sdk::ethereum::bls::threshold;
 
     #[test]
     fn test_bls_threshold_keygen_sign_aggregate() {
@@ -688,7 +688,7 @@ mod edge_cases {
 
 #[cfg(feature = "bls")]
 mod eip2333_integration {
-    use chains_sdk::bls::eip2333;
+    use chains_sdk::ethereum::bls::eip2333;
     use chains_sdk::traits::{KeyPair, Signer, Verifier};
 
     #[test]
@@ -699,7 +699,7 @@ mod eip2333_integration {
         let sig = signer.sign(msg).unwrap();
 
         let verifier =
-            chains_sdk::bls::BlsVerifier::from_public_key_bytes(&Signer::public_key_bytes(&signer))
+            chains_sdk::ethereum::bls::BlsVerifier::from_public_key_bytes(&Signer::public_key_bytes(&signer))
                 .unwrap();
         assert!(verifier.verify(msg, &sig).unwrap());
     }

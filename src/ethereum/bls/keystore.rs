@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_bls_keystore_with_real_bls_key() {
-        use crate::bls::BlsSigner;
+        use crate::ethereum::bls::BlsSigner;
         use crate::traits::{KeyPair, Signer, Verifier};
 
         let signer = BlsSigner::generate().unwrap();
@@ -341,7 +341,7 @@ mod tests {
         let restored = BlsSigner::from_bytes(&decrypted).unwrap();
         let msg = b"attestation";
         let sig = restored.sign(msg).unwrap();
-        let verifier = crate::bls::BlsVerifier::from_public_key_bytes(&pk).unwrap();
+        let verifier = crate::ethereum::bls::BlsVerifier::from_public_key_bytes(&pk).unwrap();
         assert!(verifier.verify(msg, &sig).unwrap());
     }
 }

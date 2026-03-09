@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use chains_sdk::bls::{BlsSigner, BlsVerifier, BlsSignature, aggregate_signatures};
+use chains_sdk::ethereum::bls::{BlsSigner, BlsVerifier, BlsSignature, aggregate_signatures};
 use chains_sdk::traits::{KeyPair, Signer, Verifier};
 
 fuzz_target!(|data: &[u8]| {

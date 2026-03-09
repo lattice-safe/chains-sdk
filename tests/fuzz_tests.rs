@@ -117,8 +117,8 @@ mod bls_fuzz {
 
     #[test]
     fn fuzz_bls_keystore_decrypt_no_panic() {
-        use chains_sdk::bls::keystore::{BlsKeystore, BlsScryptParams};
-        use chains_sdk::bls::BlsSigner;
+        use chains_sdk::ethereum::bls::keystore::{BlsKeystore, BlsScryptParams};
+        use chains_sdk::ethereum::bls::BlsSigner;
         use chains_sdk::traits::{KeyPair, Signer};
 
         let signer = BlsSigner::generate().unwrap();

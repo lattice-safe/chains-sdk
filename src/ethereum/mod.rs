@@ -19,10 +19,10 @@ pub mod userop;
 
 /// BLS12-381 for Ethereum Proof-of-Stake (Beacon Chain).
 ///
-/// Re-exported from `crate::bls` since BLS12-381 is fundamentally
-/// an Ethereum consensus layer primitive.
+/// Includes BLS signing, aggregation, EIP-2333 key derivation,
+/// EIP-2335 keystores, and threshold (t-of-n) signatures.
 #[cfg(feature = "bls")]
-pub use crate::bls;
+pub mod bls;
 
 use crate::error::SignerError;
 use crate::traits;

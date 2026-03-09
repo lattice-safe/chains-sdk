@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ─── BLS12-381 ───────────────────────────────────────────────────
     println!("\n=== BLS Aggregation ===\n");
     {
-        use chains_sdk::bls::{aggregate_signatures, verify_aggregated, BlsSigner};
+        use chains_sdk::ethereum::bls::{aggregate_signatures, verify_aggregated, BlsSigner};
 
         let s1 = BlsSigner::generate()?;
         let s2 = BlsSigner::generate()?;
