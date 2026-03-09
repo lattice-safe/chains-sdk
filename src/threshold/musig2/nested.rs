@@ -255,7 +255,7 @@ mod tests {
         let msg = b"partial sig verify";
 
         let (sec1, pub1) = signing::nonce_gen(&sk1, &pk1, &ctx, msg, &[]).unwrap();
-        let (sec2, pub2) = signing::nonce_gen(&sk2, &pk2, &ctx, msg, &[]).unwrap();
+        let (_sec2, pub2) = signing::nonce_gen(&sk2, &pk2, &ctx, msg, &[]).unwrap();
         let agg_nonce = signing::nonce_agg(&[pub1.clone(), pub2]).unwrap();
 
         let psig1 = signing::sign(sec1, &sk1, &ctx, &agg_nonce, msg).unwrap();

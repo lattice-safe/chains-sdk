@@ -684,7 +684,7 @@ mod tests {
         let change_spk = vec![0x00; 22];
         let tx = build_batch_transaction(&utxos, &recipients, &change_spk, 5).unwrap();
         assert_eq!(tx.inputs.len(), 1);
-        assert!(tx.outputs.len() >= 1); // at least recipient
+        assert!(!tx.outputs.is_empty()); // at least recipient
     }
 
     #[test]
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(tx.inputs[0].sequence, 0xFFFFFFFF, "sequence must be final");
         // Input prevout txid (internal byte order from deserialization)
         assert_eq!(
-            hex::encode(&tx.inputs[0].previous_output.txid),
+            hex::encode(tx.inputs[0].previous_output.txid),
             "9c2e0f24a03e72002a96acedb12a632e72b6b74c05dc3ceab1fe78237f886c48"
         );
 

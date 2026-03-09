@@ -25,7 +25,7 @@ mod ethereum_props {
         fn keygen_roundtrip(seed in prop::collection::vec(any::<u8>(), 32..33)) {
             let signer = EthereumSigner::from_bytes(&seed).unwrap();
             let pk1 = Signer::public_key_bytes(&signer);
-            let restored = EthereumSigner::from_bytes(&*signer.private_key_bytes()).unwrap();
+            let restored = EthereumSigner::from_bytes(&signer.private_key_bytes()).unwrap();
             let pk2 = Signer::public_key_bytes(&restored);
             prop_assert_eq!(pk1, pk2);
         }

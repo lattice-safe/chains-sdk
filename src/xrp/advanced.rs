@@ -709,8 +709,8 @@ mod tests {
         let (m, e, pos) = decode_iou_amount(&encoded);
         assert!(pos);
         // After normalization, mantissa * 10^exponent should represent same value
-        let original = 1_000_000_000_000_000u128 * 10u128.pow(0);
-        let decoded = m as u128 * 10u128.pow((e + 97 - 97) as u32);
+        let _original = 1_000_000_000_000_000u128 * 10u128.pow(0);
+        let _decoded = m as u128 * 10u128.pow((e + 97 - 97) as u32);
         // Values should be in the same order of magnitude
         assert!(m > 0);
     }

@@ -1222,7 +1222,7 @@ mod tests {
     fn test_full_2_of_3_signing_flow() {
         // 3 owners, 2-of-3 threshold
         let o1 = super::super::EthereumSigner::generate().unwrap();
-        let o2 = super::super::EthereumSigner::generate().unwrap();
+        let _o2 = super::super::EthereumSigner::generate().unwrap();
         let o3 = super::super::EthereumSigner::generate().unwrap();
 
         let domain = safe_domain_separator(1, &[0xAA; 20]);

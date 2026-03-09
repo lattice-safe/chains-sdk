@@ -235,7 +235,7 @@ mod tests {
         let r_encoded = r_affine.to_encoded_point(false);
         let mut r_x = [0u8; 32];
         if let Some(x) = r_encoded.x() {
-            r_x.copy_from_slice(x.as_slice());
+            r_x.copy_from_slice(&x[..]);
         }
 
         let adaptor_sig = create_adaptor_signature(&partial, &adaptor_bytes, &r_x).unwrap();
@@ -262,7 +262,7 @@ mod tests {
         let r_encoded = r_affine.to_encoded_point(false);
         let mut r_x = [0u8; 32];
         if let Some(x) = r_encoded.x() {
-            r_x.copy_from_slice(x.as_slice());
+            r_x.copy_from_slice(&x[..]);
         }
 
         let adaptor = create_adaptor_signature(&partial, &adaptor_bytes, &r_x).unwrap();

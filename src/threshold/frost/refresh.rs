@@ -170,7 +170,7 @@ pub fn verify_refresh_package(pkg: &RefreshPackage) -> bool {
 mod tests {
     use super::*;
     use crate::threshold::frost::signing;
-    use k256::elliptic_curve::sec1::ToEncodedPoint;
+    
 
     #[test]
     fn test_refresh_preserves_group_key() {
@@ -187,7 +187,7 @@ mod tests {
         // Each participant applies the refresh
         let new_kp1 = apply_refresh(&kgen.key_packages[0], &refresh_pkgs).unwrap();
         let new_kp2 = apply_refresh(&kgen.key_packages[1], &refresh_pkgs).unwrap();
-        let new_kp3 = apply_refresh(&kgen.key_packages[2], &refresh_pkgs).unwrap();
+        let _new_kp3 = apply_refresh(&kgen.key_packages[2], &refresh_pkgs).unwrap();
 
         // Group public key must be preserved
         assert_eq!(new_kp1.group_public_key, original_gpk);

@@ -689,7 +689,7 @@ mod edge_cases {
 #[cfg(feature = "bls")]
 mod eip2333_integration {
     use chains_sdk::ethereum::bls::eip2333;
-    use chains_sdk::traits::{KeyPair, Signer, Verifier};
+    use chains_sdk::traits::{Signer, Verifier};
 
     #[test]
     fn test_eip2333_validator_signing_roundtrip() {
@@ -761,7 +761,7 @@ mod frost_large {
 
         let sigs: Vec<_> = indices
             .iter()
-            .zip(nonces.into_iter())
+            .zip(nonces)
             .map(|(&i, nonce)| signing::sign(&kgen.key_packages[i], nonce, &comms, msg).unwrap())
             .collect();
 

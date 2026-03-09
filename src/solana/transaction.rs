@@ -1606,7 +1606,7 @@ mod tests {
         let program_id = [0xAA; 32];
         let (pda, bump) = find_program_address(&[b"test_seed"], &program_id).unwrap();
         assert_eq!(pda.len(), 32);
-        assert!(bump <= 255);
+        assert_ne!(bump, 0, "bump should be valid");
         // Same inputs → same output
         let (pda2, bump2) = find_program_address(&[b"test_seed"], &program_id).unwrap();
         assert_eq!(pda, pda2);

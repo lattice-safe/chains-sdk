@@ -1020,7 +1020,7 @@ mod tests {
     #[test]
     fn test_deserialize_wrong_version() {
         // Construct a valid-looking PSBT but with version=1
-        let mut psbt = PsbtV2::new();
+        let psbt = PsbtV2::new();
         let data = psbt.serialize();
         // Manually patch the version to 1
         let mut patched = data.clone();

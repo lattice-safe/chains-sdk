@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_calldata() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.call_data = vec![0x03, 0x04];
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_sender() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.sender = [0xBB; 20];
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_nonce() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.nonce[31] = 1;
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
@@ -712,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_init_code() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.init_code = vec![0xFF; 20];
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_paymaster_data() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.paymaster_and_data = vec![0xAA; 52];
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_gas_limits() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.account_gas_limits = PackedUserOperation::pack_account_gas_limits(999, 888);
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
@@ -736,7 +736,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_with_gas_fees() {
-        let mut op1 = sample_op();
+        let op1 = sample_op();
         let mut op2 = sample_op();
         op2.gas_fees = PackedUserOperation::pack_gas_fees(999, 888);
         assert_ne!(op1.hash(&[0xFF; 20], 1), op2.hash(&[0xFF; 20], 1));
