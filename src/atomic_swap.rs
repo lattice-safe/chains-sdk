@@ -27,8 +27,10 @@
 //! ```
 
 use crate::crypto;
+use crate::error::SignerError;
 use crate::ethereum::abi::{self, AbiValue};
 use crate::security;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ═══════════════════════════════════════════════════════════════════
 // Bitcoin Script Opcodes (HTLC subset)
@@ -60,22 +62,27 @@ const OP_CSV: u8 = 0xb2;  // OP_CHECKSEQUENCEVERIFY
 // ═══════════════════════════════════════════════════════════════════
 
 /// A swap secret: 32-byte preimage and its SHA-256 hash.
-#[derive(Clone)]
+///
+/// The preimage is zeroized from memory when this struct is dropped.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SwapSecret {
     /// The 32-byte secret preimage (keep private until claiming).
     pub preimage: [u8; 32],
     /// SHA-256 hash of the preimage (publicly shared as the hash lock).
+    #[zeroize(skip)]
     pub hash: [u8; 32],
 }
 
 impl SwapSecret {
     /// Generate a new cryptographically secure swap secret.
-    #[must_use]
-    pub fn generate() -> Self {
+    ///
+    /// # Errors
+    /// Returns `SignerError` if the system RNG fails (e.g., entropy exhaustion).
+    pub fn generate() -> Result<Self, SignerError> {
         let mut preimage = [0u8; 32];
-        let _ = security::secure_random(&mut preimage);
+        security::secure_random(&mut preimage)?;
         let hash = crypto::sha256(&preimage);
-        Self { preimage, hash }
+        Ok(Self { preimage, hash })
     }
 
     /// Create a swap secret from a known preimage.
@@ -368,15 +375,15 @@ mod tests {
 
     #[test]
     fn test_generate_secret_unique() {
-        let s1 = SwapSecret::generate();
-        let s2 = SwapSecret::generate();
+        let s1 = SwapSecret::generate().unwrap();
+        let s2 = SwapSecret::generate().unwrap();
         assert_ne!(s1.preimage, s2.preimage);
         assert_ne!(s1.hash, s2.hash);
     }
 
     #[test]
     fn test_secret_hash_matches() {
-        let secret = SwapSecret::generate();
+        let secret = SwapSecret::generate().unwrap();
         assert_eq!(crypto::sha256(&secret.preimage), secret.hash);
     }
 
@@ -390,13 +397,13 @@ mod tests {
 
     #[test]
     fn test_verify_preimage_correct() {
-        let secret = SwapSecret::generate();
+        let secret = SwapSecret::generate().unwrap();
         assert!(SwapSecret::verify(&secret.preimage, &secret.hash));
     }
 
     #[test]
     fn test_verify_preimage_incorrect() {
-        let secret = SwapSecret::generate();
+        let secret = SwapSecret::generate().unwrap();
         let wrong = [0xFF; 32];
         assert!(!SwapSecret::verify(&wrong, &secret.hash));
     }
@@ -581,7 +588,7 @@ mod tests {
     #[test]
     fn test_e2e_swap_flow() {
         // 1. Alice generates secret
-        let secret = SwapSecret::generate();
+        let secret = SwapSecret::generate().unwrap();
 
         // 2. Bob verifies the hash on-chain
         assert!(SwapSecret::verify(&secret.preimage, &secret.hash));
@@ -613,7 +620,7 @@ mod tests {
 
     #[test]
     fn test_e2e_expired_refund() {
-        let secret = SwapSecret::generate();
+        let secret = SwapSecret::generate().unwrap();
         let time_lock = 1_700_000_000u64;
 
         // Not expired yet

@@ -145,7 +145,8 @@ impl DcaParams {
     }
 
     /// Serialize params to instruction data bytes (Borsh-like).
-    fn serialize(&self) -> Vec<u8> {
+    #[must_use]
+    pub fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(64);
         data.extend_from_slice(&self.in_amount_per_cycle.to_le_bytes());
         data.extend_from_slice(&self.cycle_frequency.to_le_bytes());

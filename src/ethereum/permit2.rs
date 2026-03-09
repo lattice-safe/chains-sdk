@@ -24,7 +24,7 @@
 //! let hash = permit.struct_hash();
 //! ```
 
-use sha3::{Digest, Keccak256};
+use crate::ethereum::keccak256;
 
 /// Uniswap Permit2 contract address (same on all chains).
 pub const PERMIT2_ADDRESS: [u8; 20] = [
@@ -76,8 +76,8 @@ fn permit_batch_transfer_from_typehash() -> [u8; 32] {
 pub struct PermitSingle {
     /// Token address to approve.
     pub token: [u8; 20],
-    /// Approval amount (uint160).
-    pub amount: u64,
+    /// Approval amount (uint160 — use u128 to avoid truncation).
+    pub amount: u128,
     /// Approval expiration timestamp (uint48).
     pub expiration: u64,
     /// Per-token nonce for replay protection (uint48).
@@ -94,7 +94,7 @@ impl PermitSingle {
         let mut data = Vec::with_capacity(160);
         data.extend_from_slice(&permit_details_typehash());
         data.extend_from_slice(&pad_address(&self.token));
-        data.extend_from_slice(&pad_u256(self.amount));
+        data.extend_from_slice(&pad_u128(self.amount));
         data.extend_from_slice(&pad_u256(self.expiration));
         data.extend_from_slice(&pad_u256(self.nonce));
         keccak256(&data)
@@ -130,7 +130,7 @@ pub struct PermitDetails {
     /// Token address.
     pub token: [u8; 20],
     /// Approval amount.
-    pub amount: u64,
+    pub amount: u128,
     /// Expiration timestamp.
     pub expiration: u64,
     /// Per-token nonce.
@@ -158,7 +158,7 @@ impl PermitBatch {
             let mut h = Vec::with_capacity(160);
             h.extend_from_slice(&permit_details_typehash());
             h.extend_from_slice(&pad_address(&d.token));
-            h.extend_from_slice(&pad_u256(d.amount));
+            h.extend_from_slice(&pad_u128(d.amount));
             h.extend_from_slice(&pad_u256(d.expiration));
             h.extend_from_slice(&pad_u256(d.nonce));
             details_hashes.extend_from_slice(&keccak256(&h));
@@ -190,7 +190,7 @@ pub struct PermitTransferFrom {
     /// Token address.
     pub token: [u8; 20],
     /// Maximum transfer amount.
-    pub amount: u64,
+    pub amount: u128,
     /// Unique nonce (not sequential — uses unordered nonce bitmap).
     pub nonce: u64,
     /// Signature deadline.
@@ -205,7 +205,7 @@ impl PermitTransferFrom {
         let mut data = Vec::with_capacity(96);
         data.extend_from_slice(&token_permissions_typehash());
         data.extend_from_slice(&pad_address(&self.token));
-        data.extend_from_slice(&pad_u256(self.amount));
+        data.extend_from_slice(&pad_u128(self.amount));
         keccak256(&data)
     }
 
@@ -247,7 +247,7 @@ pub struct TokenPermissions {
     /// Token address.
     pub token: [u8; 20],
     /// Transfer amount.
-    pub amount: u64,
+    pub amount: u128,
 }
 
 impl PermitBatchTransferFrom {
@@ -259,7 +259,7 @@ impl PermitBatchTransferFrom {
             let mut h = Vec::with_capacity(96);
             h.extend_from_slice(&token_permissions_typehash());
             h.extend_from_slice(&pad_address(&p.token));
-            h.extend_from_slice(&pad_u256(p.amount));
+            h.extend_from_slice(&pad_u128(p.amount));
             perms_hashes.extend_from_slice(&keccak256(&h));
         }
         let perms_array_hash = keccak256(&perms_hashes);
@@ -324,7 +324,7 @@ pub fn encode_permit_single_call(
         AbiValue::Tuple(vec![
             AbiValue::Tuple(vec![
                 AbiValue::Address(permit.token),
-                AbiValue::from_u64(permit.amount),
+                AbiValue::from_u128(permit.amount),
                 AbiValue::from_u64(permit.expiration),
                 AbiValue::from_u64(permit.nonce),
             ]),
@@ -340,7 +340,7 @@ pub fn encode_permit_single_call(
 pub fn encode_transfer_from(
     from: &[u8; 20],
     to: &[u8; 20],
-    amount: u64,
+    amount: u128,
     token: &[u8; 20],
 ) -> Vec<u8> {
     use crate::ethereum::abi::{AbiValue, Function};
@@ -348,7 +348,7 @@ pub fn encode_transfer_from(
     func.encode(&[
         AbiValue::Address(*from),
         AbiValue::Address(*to),
-        AbiValue::from_u64(amount),
+        AbiValue::from_u128(amount),
         AbiValue::Address(*token),
     ])
 }
@@ -357,11 +357,6 @@ pub fn encode_transfer_from(
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
 
-fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&Keccak256::digest(data));
-    out
-}
 
 fn pad_address(addr: &[u8; 20]) -> [u8; 32] {
     let mut buf = [0u8; 32];
@@ -372,6 +367,12 @@ fn pad_address(addr: &[u8; 20]) -> [u8; 32] {
 fn pad_u256(val: u64) -> [u8; 32] {
     let mut buf = [0u8; 32];
     buf[24..32].copy_from_slice(&val.to_be_bytes());
+    buf
+}
+
+fn pad_u128(val: u128) -> [u8; 32] {
+    let mut buf = [0u8; 32];
+    buf[16..32].copy_from_slice(&val.to_be_bytes());
     buf
 }
 
@@ -595,7 +596,7 @@ mod tests {
             nonce: 0, spender: SPENDER, sig_deadline: DEADLINE,
         };
         let data = encode_permit_single_call(&OWNER, &p, &[0xAA; 65]);
-        assert_eq!(data.len() > 4, true);
+        assert!(data.len() > 4);
     }
 
     #[test]
@@ -647,5 +648,11 @@ mod tests {
     #[test]
     fn test_permit2_address_not_zero() {
         assert_ne!(PERMIT2_ADDRESS, [0u8; 20]);
+    }
+
+    #[test]
+    fn test_permit2_address_hex() {
+        let hex = PERMIT2_ADDRESS.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        assert_eq!(hex, "000000000022d473030f116ddee9f6b43ac78ba3");
     }
 }

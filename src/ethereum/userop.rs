@@ -17,14 +17,9 @@
 //! ```
 
 use crate::ethereum::abi::{self, AbiValue};
-use sha3::{Digest, Keccak256};
+use crate::ethereum::keccak256;
 
-/// Keccak-256 hash.
-fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&Keccak256::digest(data));
-    out
-}
+
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants

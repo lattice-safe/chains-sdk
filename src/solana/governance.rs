@@ -153,6 +153,7 @@ pub fn create_realm(
 
 /// Deposit governing tokens (join a realm).
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn deposit_governing_tokens(
     program_id: &[u8; 32],
     realm: &[u8; 32],
@@ -160,19 +161,19 @@ pub fn deposit_governing_tokens(
     governing_token_owner: &[u8; 32],
     governing_token_mint: &[u8; 32],
     payer: &[u8; 32],
+    token_owner_record: &[u8; 32],
     amount: u64,
 ) -> Instruction {
     let mut data = vec![IX_DEPOSIT_GOVERNING_TOKENS];
     data.extend_from_slice(&amount.to_le_bytes());
 
-    // Token owner record PDA would be derived; placeholder
-    let token_owner_record = [0u8; 32]; // caller should compute PDA
+
 
     Instruction {
         program_id: *program_id,
         accounts: vec![
             AccountMeta::new_readonly(*realm, false),
-            AccountMeta::new(token_owner_record, false),
+            AccountMeta::new(*token_owner_record, false),
             AccountMeta::new(*governing_token_source, false),
             AccountMeta::new_readonly(*governing_token_owner, true),
             AccountMeta::new_readonly(*governing_token_owner, true),
@@ -265,13 +266,13 @@ pub fn cast_vote(
     token_owner_record: &[u8; 32],
     voter_authority: &[u8; 32],
     payer: &[u8; 32],
+    vote_record: &[u8; 32],
     vote: Vote,
 ) -> Instruction {
     let mut data = vec![IX_CAST_VOTE];
     data.extend_from_slice(&vote.to_bytes());
 
-    // Vote record PDA
-    let vote_record = [0u8; 32]; // caller should compute PDA
+
 
     Instruction {
         program_id: *program_id,
@@ -280,7 +281,7 @@ pub fn cast_vote(
             AccountMeta::new(*governance, false),
             AccountMeta::new(*proposal, false),
             AccountMeta::new(*token_owner_record, false),
-            AccountMeta::new(vote_record, false),
+            AccountMeta::new(*vote_record, false),
             AccountMeta::new_readonly(*voter_authority, true),
             AccountMeta::new(*payer, true),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
@@ -425,7 +426,7 @@ mod tests {
     fn test_deposit_instruction_index() {
         let ix = deposit_governing_tokens(
             &GOVERNANCE_PROGRAM_ID, &REALM, &SOURCE,
-            &AUTHORITY, &MINT, &PAYER, 1_000_000,
+            &AUTHORITY, &MINT, &PAYER, &TOKEN_RECORD, 1_000_000,
         );
         assert_eq!(ix.data[0], IX_DEPOSIT_GOVERNING_TOKENS);
     }
@@ -434,7 +435,7 @@ mod tests {
     fn test_deposit_amount_encoded() {
         let ix = deposit_governing_tokens(
             &GOVERNANCE_PROGRAM_ID, &REALM, &SOURCE,
-            &AUTHORITY, &MINT, &PAYER, 42,
+            &AUTHORITY, &MINT, &PAYER, &TOKEN_RECORD, 42,
         );
         let amount = u64::from_le_bytes([
             ix.data[1], ix.data[2], ix.data[3], ix.data[4],
@@ -505,7 +506,7 @@ mod tests {
         let ix = cast_vote(
             &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
             &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            Vote::Approve,
+            &[10; 32], Vote::Approve,
         );
         assert_eq!(ix.data[0], IX_CAST_VOTE);
         assert_eq!(ix.data[1], 0); // Approve
@@ -516,7 +517,7 @@ mod tests {
         let ix = cast_vote(
             &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
             &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            Vote::Deny,
+            &[10; 32], Vote::Deny,
         );
         assert_eq!(ix.data[1], 1);
     }
@@ -526,7 +527,7 @@ mod tests {
         let ix = cast_vote(
             &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
             &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            Vote::Abstain,
+            &[10; 32], Vote::Abstain,
         );
         assert_eq!(ix.data[1], 2);
     }
@@ -536,7 +537,7 @@ mod tests {
         let ix = cast_vote(
             &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
             &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            Vote::Veto,
+            &[10; 32], Vote::Veto,
         );
         assert_eq!(ix.data[1], 3);
     }
@@ -546,7 +547,7 @@ mod tests {
         let ix = cast_vote(
             &GOVERNANCE_PROGRAM_ID, &REALM, &GOVERNANCE,
             &PROPOSAL, &TOKEN_RECORD, &AUTHORITY, &PAYER,
-            Vote::Approve,
+            &[10; 32], Vote::Approve,
         );
         assert_eq!(ix.accounts.len(), 10);
     }

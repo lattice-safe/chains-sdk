@@ -26,6 +26,8 @@ use crate::ethereum::abi::{AbiValue, Function};
 // ═══════════════════════════════════════════════════════════════════
 
 /// Uniswap V4 PoolManager address (Ethereum mainnet).
+///
+/// **TODO**: Update with the canonical PoolManager address once V4 is deployed.
 pub const POOL_MANAGER: [u8; 20] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -143,6 +145,8 @@ pub struct SwapParams {
     pub zero_for_one: bool,
     /// The swap amount (positive = exact input, negative = exact output).
     pub amount_specified: i128,
+    /// Slippage bound (min output for exact-in, max input for exact-out).
+    pub slippage_bound: u64,
     /// Price limit (sqrt price × 2^96).
     /// Use `MIN_SQRT_RATIO + 1` for sells, `MAX_SQRT_RATIO - 1` for buys.
     pub sqrt_price_limit_x96: [u8; 32],
@@ -187,10 +191,11 @@ impl SwapParams {
     ///
     /// Swaps exactly `amount_in` of token0 for at least `min_out` of token1.
     #[must_use]
-    pub fn exact_input(amount_in: u64, _min_out: u64) -> Self {
+    pub fn exact_input(amount_in: u64, min_out: u64) -> Self {
         Self {
             zero_for_one: true,
             amount_specified: amount_in as i128,
+            slippage_bound: min_out,
             sqrt_price_limit_x96: MIN_SQRT_RATIO,
         }
     }
@@ -199,11 +204,12 @@ impl SwapParams {
     ///
     /// Gets exactly `amount_out` of token1 for at most `max_in` of token0.
     #[must_use]
-    pub fn exact_output(amount_out: u64, _max_in: u64) -> Self {
+    pub fn exact_output(amount_out: u64, max_in: u64) -> Self {
         Self {
             zero_for_one: true,
             // Negative for exact output
             amount_specified: -(amount_out as i128),
+            slippage_bound: max_in,
             sqrt_price_limit_x96: MIN_SQRT_RATIO,
         }
     }

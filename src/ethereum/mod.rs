@@ -497,6 +497,15 @@ pub fn eip712_hash(domain_separator: &[u8; 32], struct_hash: &[u8; 32]) -> [u8; 
     hash
 }
 
+/// Shared Keccak-256 helper used across Ethereum sub-modules.
+///
+/// Avoids duplicating `sha3::Keccak256` wrappers in every file.
+pub(crate) fn keccak256(data: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&Keccak256::digest(data));
+    out
+}
+
 impl traits::Signer for EthereumSigner {
     type Signature = EthereumSignature;
     type Error = SignerError;

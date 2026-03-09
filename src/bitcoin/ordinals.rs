@@ -22,7 +22,6 @@ use crate::crypto;
 const OP_FALSE: u8 = 0x00;
 const OP_IF: u8 = 0x63;
 const OP_ENDIF: u8 = 0x68;
-const OP_0: u8 = 0x00;
 const OP_CHECKSIG: u8 = 0xac;
 
 // Inscription envelope protocol marker
@@ -230,8 +229,8 @@ impl Inscription {
             push_data(&mut script, rune);
         }
 
-        // Body separator
-        script.push(TAG_BODY); // OP_0
+        // Body separator (OP_0 / OP_FALSE)
+        script.push(TAG_BODY);
 
         // Body — split into 520-byte chunks (max push size)
         for chunk in self.body.chunks(520) {
@@ -318,7 +317,7 @@ impl Inscription {
 fn push_data(script: &mut Vec<u8>, data: &[u8]) {
     let len = data.len();
     if len == 0 {
-        script.push(OP_0);
+        script.push(OP_FALSE);
     } else if len <= 75 {
         script.push(len as u8);
         script.extend_from_slice(data);
@@ -637,6 +636,6 @@ mod tests {
     fn test_push_data_empty() {
         let mut s = Vec::new();
         push_data(&mut s, b"");
-        assert_eq!(s, vec![OP_0]);
+        assert_eq!(s, vec![OP_FALSE]);
     }
 }
