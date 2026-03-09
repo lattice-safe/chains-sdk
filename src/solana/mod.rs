@@ -4,6 +4,8 @@
 //! hashes transactions before feeding them to the signer.
 
 pub mod dex;
+pub mod governance;
+pub mod jupiter_dca;
 pub mod metaplex;
 pub mod programs;
 pub mod staking;
