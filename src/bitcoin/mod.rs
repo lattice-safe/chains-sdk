@@ -10,6 +10,7 @@ pub mod message;
 pub mod miniscript;
 pub mod multisig;
 pub mod musig2_tx;
+pub mod ordinals;
 pub mod psbt;
 pub mod schnorr;
 pub mod scripts;

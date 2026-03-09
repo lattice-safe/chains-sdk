@@ -49,3 +49,7 @@ pub mod bip85;
 
 #[cfg(any(feature = "frost", feature = "musig2"))]
 pub mod threshold;
+
+/// Cross-chain atomic swap HTLC primitives.
+#[cfg(all(feature = "bitcoin", feature = "ethereum"))]
+pub mod atomic_swap;

@@ -6,6 +6,7 @@
 pub mod dex;
 pub mod metaplex;
 pub mod programs;
+pub mod staking;
 pub mod token_extensions;
 pub mod transaction;
 
