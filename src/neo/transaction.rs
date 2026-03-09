@@ -621,8 +621,6 @@ pub fn contract_deploy(nef_bytes: &[u8], manifest_json: &str) -> Vec<u8> {
     let mut sb = ScriptBuilder::new();
     sb.emit_push_bytes(manifest_json.as_bytes())
         .emit_push_bytes(nef_bytes)
-        .emit(opcode::PUSH2)
-        .emit(opcode::PACK)
         .emit_contract_call(&CONTRACT_MANAGEMENT_HASH, "deploy", 2);
     sb.to_bytes()
 }
@@ -632,8 +630,6 @@ pub fn contract_update(nef_bytes: &[u8], manifest_json: &str) -> Vec<u8> {
     let mut sb = ScriptBuilder::new();
     sb.emit_push_bytes(manifest_json.as_bytes())
         .emit_push_bytes(nef_bytes)
-        .emit(opcode::PUSH2)
-        .emit(opcode::PACK)
         .emit_contract_call(&CONTRACT_MANAGEMENT_HASH, "update", 2);
     sb.to_bytes()
 }
@@ -641,9 +637,7 @@ pub fn contract_update(nef_bytes: &[u8], manifest_json: &str) -> Vec<u8> {
 /// Build a contract destroy invocation script.
 pub fn contract_destroy() -> Vec<u8> {
     let mut sb = ScriptBuilder::new();
-    sb.emit(opcode::PUSH0)
-        .emit(opcode::PACK)
-        .emit_contract_call(&CONTRACT_MANAGEMENT_HASH, "destroy", 0);
+    sb.emit_contract_call(&CONTRACT_MANAGEMENT_HASH, "destroy", 0);
     sb.to_bytes()
 }
 

@@ -50,6 +50,8 @@ pub fn encode_compact_u16(val: u16) -> Vec<u8> {
 }
 
 /// Decode a compact-u16 from bytes. Returns (value, bytes_consumed).
+///
+/// Rejects non-canonical (overlong) encodings and values exceeding `u16::MAX`.
 pub fn decode_compact_u16(data: &[u8]) -> Result<(u16, usize), SignerError> {
     if data.is_empty() {
         return Err(SignerError::ParseError("compact-u16: empty".into()));
@@ -63,13 +65,34 @@ pub fn decode_compact_u16(data: &[u8]) -> Result<(u16, usize), SignerError> {
     }
     let b1 = data[1] as u16;
     if b1 < 0x80 {
-        return Ok(((b0 & 0x7F) | (b1 << 7), 2));
+        let val = (b0 & 0x7F) | (b1 << 7);
+        // Reject overlong: if b1 == 0, value fits in 1 byte
+        if b1 == 0 {
+            return Err(SignerError::ParseError(
+                "compact-u16: overlong 2-byte encoding".into(),
+            ));
+        }
+        return Ok((val, 2));
     }
     if data.len() < 3 {
         return Err(SignerError::ParseError("compact-u16: truncated".into()));
     }
     let b2 = data[2] as u16;
-    Ok(((b0 & 0x7F) | ((b1 & 0x7F) << 7) | (b2 << 14), 3))
+    // 3-byte encoding: value = (b0 & 0x7F) | ((b1 & 0x7F) << 7) | (b2 << 14)
+    // Max valid: b2 <= 3 (since 3 << 14 = 0xC000, max u16 = 0xFFFF)
+    if b2 > 3 {
+        return Err(SignerError::ParseError(
+            "compact-u16: value exceeds u16::MAX".into(),
+        ));
+    }
+    let val = (b0 & 0x7F) | ((b1 & 0x7F) << 7) | (b2 << 14);
+    // Reject overlong: if b2 == 0, value fits in 2 bytes
+    if b2 == 0 {
+        return Err(SignerError::ParseError(
+            "compact-u16: overlong 3-byte encoding".into(),
+        ));
+    }
+    Ok((val, 3))
 }
 
 // ─── Account Meta ──────────────────────────────────────────────────
@@ -1030,6 +1053,20 @@ impl Message {
         // Account keys
         let (num_keys, consumed) = decode_compact_u16(&data[pos..])?;
         pos += consumed;
+
+        // Validate header counts against key count
+        if num_required_signatures as u16 > num_keys {
+            return Err(SignerError::ParseError(
+                "message: num_required_signatures exceeds account count".into(),
+            ));
+        }
+        if (num_readonly_signed_accounts as u16) + (num_readonly_unsigned_accounts as u16) > num_keys
+        {
+            return Err(SignerError::ParseError(
+                "message: readonly counts exceed account count".into(),
+            ));
+        }
+
         let mut account_keys = Vec::with_capacity(num_keys as usize);
         for _ in 0..num_keys {
             if pos + 32 > data.len() {
@@ -1066,6 +1103,13 @@ impl Message {
             let program_id_index = data[pos];
             pos += 1;
 
+            // Validate program_id_index is within account keys
+            if program_id_index as u16 >= num_keys {
+                return Err(SignerError::ParseError(
+                    "message: program_id_index out of range".into(),
+                ));
+            }
+
             let (num_accounts, consumed) = decode_compact_u16(&data[pos..])?;
             pos += consumed;
             if pos + num_accounts as usize > data.len() {
@@ -1075,6 +1119,15 @@ impl Message {
             }
             let accounts = data[pos..pos + num_accounts as usize].to_vec();
             pos += num_accounts as usize;
+
+            // Validate each account index is within account keys
+            for &acct_idx in &accounts {
+                if acct_idx as u16 >= num_keys {
+                    return Err(SignerError::ParseError(
+                        "message: instruction account index out of range".into(),
+                    ));
+                }
+            }
 
             let (data_len, consumed) = decode_compact_u16(&data[pos..])?;
             pos += consumed;
@@ -1091,6 +1144,14 @@ impl Message {
                 accounts,
                 data: ix_data,
             });
+        }
+
+        // Reject trailing bytes
+        if pos != data.len() {
+            return Err(SignerError::ParseError(format!(
+                "message: {} trailing bytes",
+                data.len() - pos
+            )));
         }
 
         Ok(Self {
@@ -1127,6 +1188,15 @@ impl Transaction {
 
         // Message
         let message = Message::deserialize(&data[pos..])?;
+
+        // Verify signature count matches header
+        if signatures.len() != message.num_required_signatures as usize {
+            return Err(SignerError::ParseError(format!(
+                "transaction: {} signatures but header requires {}",
+                signatures.len(),
+                message.num_required_signatures
+            )));
+        }
 
         Ok(Self {
             signatures,

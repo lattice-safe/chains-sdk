@@ -26,25 +26,21 @@ const SYSTEM_PROGRAM_ID: [u8; 32] = [0; 32];
 /// ATA = PDA(ATA_PROGRAM_ID, [wallet, TOKEN_PROGRAM_ID, mint])
 ///
 /// Returns the deterministic ATA address as 32 bytes.
-pub fn derive_ata_address(wallet: &[u8; 32], mint: &[u8; 32]) -> [u8; 32] {
+pub fn derive_ata_address(wallet: &[u8; 32], mint: &[u8; 32]) -> Result<[u8; 32], crate::error::SignerError> {
     use crate::solana::transaction::find_program_address;
     let seeds: &[&[u8]] = &[wallet, &SPL_TOKEN_PROGRAM_ID, mint];
-    match find_program_address(seeds, &ATA_PROGRAM_ID) {
-        Ok((addr, _bump)) => addr,
-        // PDA derivation with valid seeds should always succeed;
-        // return zeroed on failure as a safe fallback.
-        Err(_) => [0u8; 32],
-    }
+    let (addr, _bump) = find_program_address(seeds, &ATA_PROGRAM_ID)?;
+    Ok(addr)
 }
 
 /// Create an Associated Token Account instruction.
 ///
 /// Creates the ATA for `wallet` and `mint` if it doesn't exist.
 /// The payer covers the rent-exempt balance.
-pub fn create_ata(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Instruction {
-    let ata = derive_ata_address(&wallet, &mint);
+pub fn create_ata(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Result<Instruction, crate::error::SignerError> {
+    let ata = derive_ata_address(&wallet, &mint)?;
 
-    Instruction {
+    Ok(Instruction {
         program_id: ATA_PROGRAM_ID,
         accounts: vec![
             AccountMeta::new(payer, true),            // payer (writable, signer)
@@ -55,16 +51,16 @@ pub fn create_ata(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Instruct
             AccountMeta::new_readonly(SPL_TOKEN_PROGRAM_ID, false), // token program
         ],
         data: vec![0], // CreateAssociatedTokenAccount = index 0
-    }
+    })
 }
 
 /// Create an ATA instruction with idempotency (CreateIdempotent).
 ///
 /// Like `create_ata` but doesn't fail if the account already exists.
-pub fn create_ata_idempotent(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Instruction {
-    let ata = derive_ata_address(&wallet, &mint);
+pub fn create_ata_idempotent(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) -> Result<Instruction, crate::error::SignerError> {
+    let ata = derive_ata_address(&wallet, &mint)?;
 
-    Instruction {
+    Ok(Instruction {
         program_id: ATA_PROGRAM_ID,
         accounts: vec![
             AccountMeta::new(payer, true),
@@ -75,7 +71,7 @@ pub fn create_ata_idempotent(payer: [u8; 32], wallet: [u8; 32], mint: [u8; 32]) 
             AccountMeta::new_readonly(SPL_TOKEN_PROGRAM_ID, false),
         ],
         data: vec![1], // CreateIdempotent = index 1
-    }
+    })
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -431,13 +427,11 @@ pub mod token_metadata {
     /// Derive the metadata account address for a given mint.
     ///
     /// PDA: `["metadata", metadata_program_id, mint]`
-    pub fn derive_metadata_address(mint: &[u8; 32]) -> [u8; 32] {
+    pub fn derive_metadata_address(mint: &[u8; 32]) -> Result<[u8; 32], crate::error::SignerError> {
         use crate::solana::transaction::find_program_address;
         let seeds: &[&[u8]] = &[b"metadata", &ID, mint];
-        match find_program_address(seeds, &ID) {
-            Ok((addr, _bump)) => addr,
-            Err(_) => [0u8; 32],
-        }
+        let (addr, _bump) = find_program_address(seeds, &ID)?;
+        Ok(addr)
     }
 
     /// Serialize a Borsh-encoded string (u32 len + UTF-8 bytes).
@@ -597,22 +591,22 @@ mod tests {
 
     #[test]
     fn test_derive_ata_deterministic() {
-        let ata1 = derive_ata_address(&WALLET, &MINT);
-        let ata2 = derive_ata_address(&WALLET, &MINT);
+        let ata1 = derive_ata_address(&WALLET, &MINT).unwrap();
+        let ata2 = derive_ata_address(&WALLET, &MINT).unwrap();
         assert_eq!(ata1, ata2);
     }
 
     #[test]
     fn test_derive_ata_different_mints() {
         let mint2 = [3; 32];
-        let ata1 = derive_ata_address(&WALLET, &MINT);
-        let ata2 = derive_ata_address(&WALLET, &mint2);
+        let ata1 = derive_ata_address(&WALLET, &MINT).unwrap();
+        let ata2 = derive_ata_address(&WALLET, &mint2).unwrap();
         assert_ne!(ata1, ata2);
     }
 
     #[test]
     fn test_create_ata_instruction() {
-        let ix = create_ata(PAYER, WALLET, MINT);
+        let ix = create_ata(PAYER, WALLET, MINT).unwrap();
         assert_eq!(ix.program_id, ATA_PROGRAM_ID);
         assert_eq!(ix.accounts.len(), 6);
         assert_eq!(ix.data, vec![0]); // CreateAssociatedTokenAccount
@@ -621,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_create_ata_idempotent() {
-        let ix = create_ata_idempotent(PAYER, WALLET, MINT);
+        let ix = create_ata_idempotent(PAYER, WALLET, MINT).unwrap();
         assert_eq!(ix.data, vec![1]); // CreateIdempotent
     }
 
@@ -742,8 +736,8 @@ mod tests {
 
     #[test]
     fn test_derive_metadata_deterministic() {
-        let addr1 = token_metadata::derive_metadata_address(&MINT);
-        let addr2 = token_metadata::derive_metadata_address(&MINT);
+        let addr1 = token_metadata::derive_metadata_address(&MINT).unwrap();
+        let addr2 = token_metadata::derive_metadata_address(&MINT).unwrap();
         assert_eq!(addr1, addr2);
     }
 

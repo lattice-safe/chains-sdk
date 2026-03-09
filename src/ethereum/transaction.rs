@@ -549,8 +549,8 @@ fn decode_legacy_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction,
     let value = items[4].as_bytes()?.to_vec();
     let data = items[5].as_bytes()?.to_vec();
     let v = items[6].as_u64()?;
-    let r = pad_to_32(items[7].as_bytes()?);
-    let s = pad_to_32(items[8].as_bytes()?);
+    let r = pad_to_32(items[7].as_bytes()?)?;
+    let s = pad_to_32(items[8].as_bytes()?)?;
 
     // EIP-155: chain_id = (v - 35) / 2
     let (chain_id, recovery_id) = if v >= 35 {
@@ -617,8 +617,8 @@ fn decode_type1_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let data = items[6].as_bytes()?.to_vec();
     // items[7] = access_list (skip for decode)
     let y_parity = items[8].as_u64()?;
-    let r = pad_to_32(items[9].as_bytes()?);
-    let s = pad_to_32(items[10].as_bytes()?);
+    let r = pad_to_32(items[9].as_bytes()?)?;
+    let s = pad_to_32(items[10].as_bytes()?)?;
 
     // Reconstruct signing hash
     let mut sign_items = Vec::new();
@@ -675,8 +675,8 @@ fn decode_type2_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let data = items[7].as_bytes()?.to_vec();
     // items[8] = access_list
     let y_parity = items[9].as_u64()?;
-    let r = pad_to_32(items[10].as_bytes()?);
-    let s = pad_to_32(items[11].as_bytes()?);
+    let r = pad_to_32(items[10].as_bytes()?)?;
+    let s = pad_to_32(items[11].as_bytes()?)?;
 
     // Reconstruct signing hash
     let mut sign_items = Vec::new();
@@ -733,8 +733,8 @@ fn decode_type3_tx(raw: &[u8], tx_hash: [u8; 32]) -> Result<DecodedTransaction, 
     let data = items[7].as_bytes()?.to_vec();
     // items[8] = access_list, items[9] = max_fee_per_blob_gas, items[10] = blob_hashes
     let y_parity = items[11].as_u64()?;
-    let r = pad_to_32(items[12].as_bytes()?);
-    let s = pad_to_32(items[13].as_bytes()?);
+    let r = pad_to_32(items[12].as_bytes()?)?;
+    let s = pad_to_32(items[13].as_bytes()?)?;
 
     // Reconstruct signing hash
     let mut sign_items = Vec::new();
@@ -834,12 +834,16 @@ fn recover_signer(
     Ok(addr)
 }
 
-fn pad_to_32(data: &[u8]) -> [u8; 32] {
-    let mut buf = [0u8; 32];
-    if data.len() <= 32 {
-        buf[32 - data.len()..].copy_from_slice(data);
+fn pad_to_32(data: &[u8]) -> Result<[u8; 32], SignerError> {
+    if data.len() > 32 {
+        return Err(SignerError::ParseError(format!(
+            "signature component too large: {} bytes (max 32)",
+            data.len()
+        )));
     }
-    buf
+    let mut buf = [0u8; 32];
+    buf[32 - data.len()..].copy_from_slice(data);
+    Ok(buf)
 }
 
 #[cfg(test)]

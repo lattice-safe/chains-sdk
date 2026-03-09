@@ -191,6 +191,12 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
             if end > data.len() {
                 return Err(SignerError::ParseError("RLP: string truncated".into()));
             }
+            // Canonical check: single byte <= 0x7F must not use short-string form
+            if len == 1 && data[start] <= 0x7F {
+                return Err(SignerError::ParseError(
+                    "RLP: non-canonical single byte in short-string form".into(),
+                ));
+            }
             Ok((RlpItem::Bytes(data[start..end].to_vec()), end))
         }
 
@@ -198,6 +204,12 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
         0xB8..=0xBF => {
             let len_of_len = (prefix - 0xB7) as usize;
             let len = read_be_usize(data, offset + 1, len_of_len)?;
+            // Canonical checks
+            if len <= 55 {
+                return Err(SignerError::ParseError(
+                    "RLP: non-canonical long-form for short string".into(),
+                ));
+            }
             let start = offset + 1 + len_of_len;
             let end = start + len;
             if end > data.len() {
@@ -222,6 +234,12 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
         0xF8..=0xFF => {
             let len_of_len = (prefix - 0xF7) as usize;
             let list_len = read_be_usize(data, offset + 1, len_of_len)?;
+            // Canonical check: long form only for len > 55
+            if list_len <= 55 {
+                return Err(SignerError::ParseError(
+                    "RLP: non-canonical long-form for short list".into(),
+                ));
+            }
             let start = offset + 1 + len_of_len;
             let end = start + list_len;
             if end > data.len() {
@@ -255,10 +273,16 @@ fn read_be_usize(data: &[u8], offset: usize, len: usize) -> Result<usize, Signer
     if offset + len > data.len() {
         return Err(SignerError::ParseError("RLP: length truncated".into()));
     }
-    let mut buf = [0u8; 8];
     if len > 8 {
         return Err(SignerError::ParseError("RLP: length too large".into()));
     }
+    // Reject leading zeros in length encoding (non-canonical)
+    if len > 1 && data[offset] == 0 {
+        return Err(SignerError::ParseError(
+            "RLP: non-canonical length with leading zeros".into(),
+        ));
+    }
+    let mut buf = [0u8; 8];
     buf[8 - len..].copy_from_slice(&data[offset..offset + len]);
     Ok(u64::from_be_bytes(buf) as usize)
 }

@@ -51,7 +51,33 @@ impl Witness {
     /// - `signatures` — List of 64-byte signatures
     /// - `public_keys` — List of 33-byte compressed public keys
     /// - `threshold` — Minimum number of signatures required (m)
-    pub fn from_multisig(signatures: &[[u8; 64]], public_keys: &[[u8; 33]], threshold: u8) -> Self {
+    ///
+    /// # Errors
+    /// Returns error if threshold is 0, threshold > n, or n > 1024.
+    pub fn from_multisig(
+        signatures: &[[u8; 64]],
+        public_keys: &[[u8; 33]],
+        threshold: u8,
+    ) -> Result<Self, crate::error::SignerError> {
+        let n = public_keys.len();
+        if threshold == 0 {
+            return Err(crate::error::SignerError::ParseError(
+                "multisig: threshold must be >= 1".into(),
+            ));
+        }
+        if (threshold as usize) > n {
+            return Err(crate::error::SignerError::ParseError(format!(
+                "multisig: threshold {} exceeds key count {}",
+                threshold, n
+            )));
+        }
+        if n > 1024 {
+            return Err(crate::error::SignerError::ParseError(format!(
+                "multisig: key count {} exceeds maximum 1024",
+                n
+            )));
+        }
+
         // Invocation: push each signature
         let mut inv = Vec::new();
         for sig in signatures {
@@ -62,30 +88,29 @@ impl Witness {
 
         // Verification: PUSH_M <pk1> <pk2> ... PUSH_N SYSCALL CheckMultiSig
         let mut ver = Vec::new();
+
         // Push M (threshold)
-        if threshold <= 16 {
-            ver.push(0x10 + threshold); // PUSH1..PUSH16
-        }
+        push_small_integer(&mut ver, threshold as u16);
+
         // Push each public key
         for pk in public_keys {
             ver.push(0x0C); // PUSHDATA1
             ver.push(33);
             ver.extend_from_slice(pk);
         }
+
         // Push N (total keys)
-        let n = public_keys.len() as u8;
-        if n <= 16 {
-            ver.push(0x10 + n); // PUSH1..PUSH16
-        }
+        push_small_integer(&mut ver, n as u16);
+
         // SYSCALL Neo.Crypto.CheckMultisig
         ver.push(0x41);
         let syscall_hash = neo_crypto_checkmultisig_hash();
         ver.extend_from_slice(&syscall_hash);
 
-        Self {
+        Ok(Self {
             invocation_script: inv,
             verification_script: ver,
-        }
+        })
     }
 
     /// Serialize the witness for inclusion in a transaction.
@@ -213,6 +238,27 @@ fn neo_crypto_checkmultisig_hash() -> [u8; 4] {
     out
 }
 
+/// Push a small integer (0–65535) onto the NeoVM stack.
+///
+/// - 0 → PUSH0 (0x10 is PUSH1, so 0 uses opcode 0x0F)
+/// - 1–16 → PUSH1..PUSH16 (0x11..0x20)
+/// - 17–255 → PUSHINT8 (0x00) + 1-byte value
+/// - 256–65535 → PUSHINT16 (0x01) + 2-byte LE value
+fn push_small_integer(buf: &mut Vec<u8>, value: u16) {
+    match value {
+        0 => buf.push(0x0F), // PUSH0
+        1..=16 => buf.push(0x10 + value as u8), // PUSH1..PUSH16
+        17..=255 => {
+            buf.push(0x00); // PUSHINT8
+            buf.push(value as u8);
+        }
+        256.. => {
+            buf.push(0x01); // PUSHINT16
+            buf.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+}
+
 /// Write a variable-length integer (NEO format).
 fn write_var_int(out: &mut Vec<u8>, val: u64) {
     if val < 0xFD {
@@ -278,7 +324,7 @@ mod tests {
     fn test_multisig_witness() {
         let sigs = [SIG, SIG]; // 2 signatures
         let pks = [PUBKEY, [0x03; 33]]; // 2 keys
-        let w = Witness::from_multisig(&sigs, &pks, 2);
+        let w = Witness::from_multisig(&sigs, &pks, 2).unwrap();
         // Invocation should have 2 signature pushes
         // Each: 1 + 1 + 64 = 66, total = 132
         assert_eq!(w.invocation_script.len(), 132);

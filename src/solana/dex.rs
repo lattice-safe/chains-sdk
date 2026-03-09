@@ -46,9 +46,17 @@ impl SwapParams {
     /// Calculate minimum output from input amount and slippage.
     ///
     /// `min_out = expected_out * (10000 - slippage_bps) / 10000`
+    ///
+    /// If `slippage_bps >= 10_000` (100%), `min_out` is 0.
     #[must_use]
     pub fn with_slippage(in_amount: u64, expected_out: u64, slippage_bps: u16) -> Self {
-        let min_out = expected_out * (10_000 - slippage_bps as u64) / 10_000;
+        let min_out = if slippage_bps >= 10_000 {
+            0
+        } else {
+            let factor = 10_000_u64 - slippage_bps as u64;
+            // Use u128 to prevent overflow: expected_out * factor can exceed u64::MAX
+            ((expected_out as u128 * factor as u128) / 10_000) as u64
+        };
         Self {
             in_amount,
             minimum_out_amount: min_out,
