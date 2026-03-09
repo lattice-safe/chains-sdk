@@ -477,4 +477,107 @@ mod tests {
         assert_eq!(m.phrase(), phrase);
         assert_eq!(m.word_count(), 12);
     }
+
+    // ─── Cross-Chain Mnemonic Integration ───────────────────────
+    // One mnemonic → derive signers for all supported chains → verify
+    // addresses are distinct and valid.
+
+    #[test]
+    fn test_cross_chain_mnemonic_derivation() {
+        // Use the well-known BIP-39 test vector: all-zeros entropy
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let m = Mnemonic::from_phrase(phrase).unwrap();
+        let seed = m.to_seed("");
+
+        // All chains should derive from the same seed
+        let master = crate::hd_key::ExtendedPrivateKey::from_seed(&*seed).unwrap();
+
+        // Ethereum: m/44'/60'/0'/0/0
+        let eth = master
+            .derive_path(&crate::hd_key::DerivationPath::ethereum(0))
+            .unwrap();
+        let eth_key = eth.private_key_bytes();
+        assert_eq!(eth_key.len(), 32);
+
+        // Bitcoin: m/44'/0'/0'/0/0
+        let btc = master
+            .derive_path(&crate::hd_key::DerivationPath::bitcoin(0))
+            .unwrap();
+        let btc_key = btc.private_key_bytes();
+        assert_eq!(btc_key.len(), 32);
+
+        // Solana: m/44'/501'/0'/0'
+        let sol = master
+            .derive_path(&crate::hd_key::DerivationPath::solana(0))
+            .unwrap();
+        let sol_key = sol.private_key_bytes();
+        assert_eq!(sol_key.len(), 32);
+
+        // XRP: m/44'/144'/0'/0/0
+        let xrp = master
+            .derive_path(&crate::hd_key::DerivationPath::xrp(0))
+            .unwrap();
+        let xrp_key = xrp.private_key_bytes();
+        assert_eq!(xrp_key.len(), 32);
+
+        // All derived keys must be different (different BIP-44 coin types)
+        assert_ne!(&*eth_key, &*btc_key, "ETH != BTC");
+        assert_ne!(&*eth_key, &*sol_key, "ETH != SOL");
+        assert_ne!(&*eth_key, &*xrp_key, "ETH != XRP");
+        assert_ne!(&*btc_key, &*sol_key, "BTC != SOL");
+        assert_ne!(&*btc_key, &*xrp_key, "BTC != XRP");
+        assert_ne!(&*sol_key, &*xrp_key, "SOL != XRP");
+
+        // Derive same key twice → deterministic
+        let eth2 = master
+            .derive_path(&crate::hd_key::DerivationPath::ethereum(0))
+            .unwrap();
+        assert_eq!(&*eth_key, &*eth2.private_key_bytes());
+    }
+
+    #[cfg(feature = "ethereum")]
+    #[test]
+    fn test_cross_chain_mnemonic_eth_address() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let m = Mnemonic::from_phrase(phrase).unwrap();
+        let signer = m.to_ethereum_signer("", 0).unwrap();
+        let addr = signer.address_checksum();
+        assert!(addr.starts_with("0x"), "ETH address must start with 0x: {addr}");
+        assert_eq!(addr.len(), 42, "ETH address must be 42 chars");
+
+        // Second account should produce a different address
+        let signer1 = m.to_ethereum_signer("", 1).unwrap();
+        let addr1 = signer1.address_checksum();
+        assert_ne!(addr, addr1, "different account indices → different addresses");
+    }
+
+    #[cfg(feature = "bitcoin")]
+    #[test]
+    fn test_cross_chain_mnemonic_btc_signer() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let m = Mnemonic::from_phrase(phrase).unwrap();
+        let signer = m.to_bitcoin_signer("", 0).unwrap();
+        use crate::traits::Signer;
+        assert_eq!(signer.public_key_bytes().len(), 33); // compressed
+    }
+
+    #[cfg(feature = "solana")]
+    #[test]
+    fn test_cross_chain_mnemonic_sol_signer() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let m = Mnemonic::from_phrase(phrase).unwrap();
+        let signer = m.to_solana_signer("", 0).unwrap();
+        use crate::traits::Signer;
+        assert_eq!(signer.public_key_bytes().len(), 32); // Ed25519
+    }
+
+    #[cfg(feature = "xrp")]
+    #[test]
+    fn test_cross_chain_mnemonic_xrp_signer() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let m = Mnemonic::from_phrase(phrase).unwrap();
+        let signer = m.to_xrp_signer("", 0).unwrap();
+        use crate::traits::Signer;
+        assert_eq!(signer.public_key_bytes().len(), 33); // compressed secp256k1
+    }
 }

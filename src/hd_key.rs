@@ -1027,6 +1027,156 @@ mod tests {
         );
     }
 
+    // ─── BIP-32 Vector 1: Full Chain ────────────────────────────
+    // Seed: 000102030405060708090a0b0c0d0e0f
+    // Chain: m → m/0' → m/0'/1 → m/0'/1/2' → m/0'/1/2'/2 → m/0'/1/2'/2/1000000000
+
+    #[test]
+    fn test_bip32_vector1_chain_m_0h_1() {
+        let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, true).unwrap()   // m/0'
+                 .derive_child(1, false).unwrap();  // m/0'/1
+        assert_eq!(
+            &*c.to_xprv(),
+            "xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9BmLnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs"
+        );
+        // Verify depth and key length
+        assert_eq!(c.depth(), 2);
+        assert_eq!(c.private_key_bytes().len(), 32);
+    }
+
+    #[test]
+    fn test_bip32_vector1_chain_m_0h_1_2h() {
+        let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, true).unwrap()
+                 .derive_child(1, false).unwrap()
+                 .derive_child(2, true).unwrap();   // m/0'/1/2'
+        assert_eq!(
+            &*c.to_xprv(),
+            "xprv9z4pot5VBttmtdRTWfWQmoH1taj2axGVzFqSb8C9xaxKymcFzXBDptWmT7FwuEzG3ryjH4ktypQSAewRiNMjANTtpgP4mLTj34bhnZX7UiM"
+        );
+        assert_eq!(
+            c.to_xpub().unwrap(),
+            "xpub6D4BDPcP2GT577Vvch3R8wDkScZWzQzMMUm3PWbmWvVJrZwQY4VUNgqFJPMM3No2dFDFGTsxxpG5uJh7n7epu4trkrX7x7DogT5Uv6fcLW5"
+        );
+    }
+
+    #[test]
+    fn test_bip32_vector1_chain_m_0h_1_2h_2() {
+        let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, true).unwrap()
+                 .derive_child(1, false).unwrap()
+                 .derive_child(2, true).unwrap()
+                 .derive_child(2, false).unwrap();  // m/0'/1/2'/2
+        assert_eq!(
+            &*c.to_xprv(),
+            "xprvA2JDeKCSNNZky6uBCviVfJSKyQ1mDYahRjijr5idH2WwLsEd4Hsb2Tyh8RfQMuPh7f7RtyzTtdrbdqqsunu5Mm3wDvUAKRHSC34sJ7in334"
+        );
+        assert_eq!(c.depth(), 4);
+    }
+
+    #[test]
+    fn test_bip32_vector1_chain_m_0h_1_2h_2_1000000000() {
+        let seed = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, true).unwrap()
+                 .derive_child(1, false).unwrap()
+                 .derive_child(2, true).unwrap()
+                 .derive_child(2, false).unwrap()
+                 .derive_child(1_000_000_000, false).unwrap(); // m/0'/1/2'/2/1000000000
+        assert_eq!(
+            &*c.to_xprv(),
+            "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76"
+        );
+        assert_eq!(c.depth(), 5);
+    }
+
+    // ─── BIP-32 Vector 2: Full Chain ────────────────────────────
+    // Seed: fffcf9f6...484542
+    // Chain: m → m/0 → m/0/2147483647' → m/0/2147483647'/1 → m/0/2147483647'/1/2147483646' → m/0/2147483647'/1/2147483646'/2
+
+    #[test]
+    fn test_bip32_vector2_chain_m_0_2147483647h() {
+        let seed = hex::decode(
+            "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+        ).unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, false).unwrap()
+                 .derive_child(2_147_483_647, true).unwrap(); // m/0/2147483647'
+        assert_eq!(
+            &*c.to_xprv(),
+            "xprv9wSp6B7kry3Vj9m1zSnLvN3xH8RdsPP1Mh7fAaR7aRLcQMKTR2vidYEeEg2mUCTAwCd6vnxVrcjfy2kRgVsFawNzmjuHc2YmYRmagcEPdU9"
+        );
+    }
+
+    #[test]
+    fn test_bip32_vector2_chain_m_0_2147483647h_1() {
+        let seed = hex::decode(
+            "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+        ).unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, false).unwrap()
+                 .derive_child(2_147_483_647, true).unwrap()
+                 .derive_child(1, false).unwrap(); // m/0/2147483647'/1
+        assert_eq!(
+            &*c.to_xprv(),
+            // spec: xprv9zFnWC6h2cLgpmSA46vutJzBcfJ8yaJGg8cX1e5StJh45BBciYTRXSd25UEPVuesF9yog62tGAQtHjXajPPdbRCHuWS6T8XA2ECKADdw4Ef
+            "xprv9zFnWC6h2cLgpmSA46vutJzBcfJ8yaJGg8cX1e5StJh45BBciYTRXSd25UEPVuesF9yog62tGAQtHjXajPPdbRCHuWS6T8XA2ECKADdw4Ef"
+        );
+    }
+
+    #[test]
+    fn test_bip32_vector2_chain_full() {
+        let seed = hex::decode(
+            "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+        ).unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, false).unwrap()
+                 .derive_child(2_147_483_647, true).unwrap()
+                 .derive_child(1, false).unwrap()
+                 .derive_child(2_147_483_646, true).unwrap()
+                 .derive_child(2, false).unwrap(); // m/0/2147483647'/1/2147483646'/2
+        assert_eq!(
+            &*c.to_xprv(),
+            "xprvA2nrNbFZABcdryreWet9Ea4LvTJcGsqrMzxHx98MMrotbir7yrKCEXw7nadnHM8Dq38EGfSh6dqA9QWTyefMLEcBYJUuekgW4BYPJcr9E7j"
+        );
+        assert_eq!(c.depth(), 5);
+    }
+
+    // ─── BIP-32 Vector 3: Leading zeros edge case ───────────────
+    // Seed: 4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be
+
+    #[test]
+    fn test_bip32_vector3_master() {
+        let seed = hex::decode(
+            "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be"
+        ).unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        assert_eq!(
+            &*m.to_xprv(),
+            "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6"
+        );
+        assert_eq!(m.depth(), 0);
+    }
+
+    #[test]
+    fn test_bip32_vector3_chain_m_0h() {
+        let seed = hex::decode(
+            "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be"
+        ).unwrap();
+        let m = ExtendedPrivateKey::from_seed(&seed).unwrap();
+        let c = m.derive_child(0, true).unwrap();
+        assert_eq!(
+            &*c.to_xprv(),
+            // spec: xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L
+            "xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L"
+        );
+        assert_eq!(c.depth(), 1);
+    }
+
     // ─── Derivation Path Edge Cases ─────────────────────────────
 
     #[test]
