@@ -389,7 +389,13 @@ pub fn read_var_int(data: &[u8]) -> Result<(u64, usize), SignerError> {
                     "read_var_int: truncated u16".into(),
                 ));
             }
-            Ok((u64::from(u16::from_le_bytes([data[1], data[2]])), 3))
+            let val = u16::from_le_bytes([data[1], data[2]]);
+            if val < 0xFD {
+                return Err(SignerError::ParseError(
+                    "read_var_int: non-canonical u16 encoding".into(),
+                ));
+            }
+            Ok((u64::from(val), 3))
         }
         0xFE => {
             if data.len() < 5 {
@@ -397,10 +403,13 @@ pub fn read_var_int(data: &[u8]) -> Result<(u64, usize), SignerError> {
                     "read_var_int: truncated u32".into(),
                 ));
             }
-            Ok((
-                u64::from(u32::from_le_bytes([data[1], data[2], data[3], data[4]])),
-                5,
-            ))
+            let val = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
+            if val <= 0xFFFF {
+                return Err(SignerError::ParseError(
+                    "read_var_int: non-canonical u32 encoding".into(),
+                ));
+            }
+            Ok((u64::from(val), 5))
         }
         0xFF => {
             if data.len() < 9 {
@@ -411,6 +420,11 @@ pub fn read_var_int(data: &[u8]) -> Result<(u64, usize), SignerError> {
             let val = u64::from_le_bytes([
                 data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
             ]);
+            if val <= 0xFFFF_FFFF {
+                return Err(SignerError::ParseError(
+                    "read_var_int: non-canonical u64 encoding".into(),
+                ));
+            }
             Ok((val, 9))
         }
     }
@@ -898,11 +912,14 @@ mod tests {
     fn test_read_var_int() {
         assert_eq!(read_var_int(&[0x00]).unwrap(), (0, 1));
         assert_eq!(read_var_int(&[0xFC]).unwrap(), (252, 1));
-        assert_eq!(read_var_int(&[0xFD, 0x01, 0x00]).unwrap(), (1, 3));
+        assert_eq!(read_var_int(&[0xFD, 0xFD, 0x00]).unwrap(), (253, 3));
         assert_eq!(
-            read_var_int(&[0xFE, 0x01, 0x00, 0x00, 0x00]).unwrap(),
-            (1, 5)
+            read_var_int(&[0xFE, 0x00, 0x00, 0x01, 0x00]).unwrap(),
+            (65_536, 5)
         );
+        assert!(read_var_int(&[0xFD, 0x01, 0x00]).is_err()); // non-canonical
+        assert!(read_var_int(&[0xFE, 0x01, 0x00, 0x00, 0x00]).is_err()); // non-canonical
+        assert!(read_var_int(&[0xFF, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]).is_err());
     }
 
     // ─── NEP-17 Extended Tests ────────────────────────────────────

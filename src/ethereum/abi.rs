@@ -309,20 +309,37 @@ pub fn decode_bool(data: &[u8]) -> Result<bool, SignerError> {
 ///
 /// Reads the offset pointer, then the length-prefixed data.
 pub fn decode_bytes(data: &[u8], param_offset: usize) -> Result<Vec<u8>, SignerError> {
+    if param_offset > data.len() {
+        return Err(SignerError::ParseError(
+            "ABI: parameter offset out of range".into(),
+        ));
+    }
+
     // Read the offset (big-endian u64 in 32 bytes)
-    let offset = decode_uint256_as_u64(&data[param_offset..])? as usize;
+    let offset_u64 = decode_uint256_as_u64(&data[param_offset..])?;
+    let offset = usize::try_from(offset_u64)
+        .map_err(|_| SignerError::ParseError("ABI: bytes offset exceeds usize".into()))?;
+
     // At `offset`: length (32 bytes) + data
-    if offset + 32 > data.len() {
+    let start = offset
+        .checked_add(32)
+        .ok_or_else(|| SignerError::ParseError("ABI: bytes offset overflow".into()))?;
+    if start > data.len() {
         return Err(SignerError::ParseError(
             "ABI: bytes offset out of range".into(),
         ));
     }
-    let len = decode_uint256_as_u64(&data[offset..])? as usize;
-    let start = offset + 32;
-    if start + len > data.len() {
+
+    let len_u64 = decode_uint256_as_u64(&data[offset..])?;
+    let len = usize::try_from(len_u64)
+        .map_err(|_| SignerError::ParseError("ABI: bytes length exceeds usize".into()))?;
+    let end = start
+        .checked_add(len)
+        .ok_or_else(|| SignerError::ParseError("ABI: bytes length overflow".into()))?;
+    if end > data.len() {
         return Err(SignerError::ParseError("ABI: bytes data truncated".into()));
     }
-    Ok(data[start..start + len].to_vec())
+    Ok(data[start..end].to_vec())
 }
 
 /// Decode a dynamic `string` from ABI-encoded data at a given offset.
@@ -690,6 +707,12 @@ mod tests {
         let encoded = encode(&[AbiValue::String(s.to_string())]);
         let decoded = decode_string(&encoded, 0).unwrap();
         assert_eq!(decoded, s);
+    }
+
+    #[test]
+    fn test_decode_bytes_param_offset_out_of_range() {
+        let encoded = encode(&[AbiValue::Bytes(vec![0xAA, 0xBB])]);
+        assert!(decode_bytes(&encoded, encoded.len() + 1).is_err());
     }
 
     // ─── Contract Deploy Tests ─────────────────────────────────────

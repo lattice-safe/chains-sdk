@@ -219,26 +219,7 @@ impl Psbt {
             .ok_or_else(|| SignerError::SigningFailed("missing witness UTXO for input".into()))?
             .clone();
 
-        // Parse witness UTXO: amount (8 bytes LE) + scriptPubKey
-        if utxo_data.len() < 9 {
-            return Err(SignerError::SigningFailed("witness UTXO too short".into()));
-        }
-        let mut amount_bytes = [0u8; 8];
-        amount_bytes.copy_from_slice(&utxo_data[..8]);
-        let amount = u64::from_le_bytes(amount_bytes);
-
-        // Extract scriptPubKey (skip compact size)
-        let mut utxo_off = 8usize;
-        let script_len = encoding::read_compact_size(&utxo_data, &mut utxo_off)? as usize;
-        let script_end = utxo_off.checked_add(script_len).ok_or_else(|| {
-            SignerError::SigningFailed("witness UTXO script length overflow".into())
-        })?;
-        if script_end > utxo_data.len() {
-            return Err(SignerError::SigningFailed(
-                "witness UTXO script truncated".into(),
-            ));
-        }
-        let script_pk = &utxo_data[utxo_off..script_end];
+        let (amount, script_pk) = parse_witness_utxo_value(&utxo_data, "witness UTXO")?;
 
         // Extract pubkey hash from P2WPKH scriptPubKey: OP_0 OP_PUSH20 <hash>
         if script_pk.len() != 22 || script_pk[0] != 0x00 || script_pk[1] != 0x14 {
@@ -309,28 +290,11 @@ impl Psbt {
             let utxo_data = input_map.get(&witness_utxo_key).ok_or_else(|| {
                 SignerError::SigningFailed(format!("missing witness UTXO for input {i}"))
             })?;
-            if utxo_data.len() < 9 {
-                return Err(SignerError::SigningFailed(format!(
-                    "witness UTXO {i} too short"
-                )));
-            }
-            let mut amount_bytes = [0u8; 8];
-            amount_bytes.copy_from_slice(&utxo_data[..8]);
-            let amount = u64::from_le_bytes(amount_bytes);
-            let mut utxo_off = 8usize;
-            let script_len = encoding::read_compact_size(utxo_data, &mut utxo_off)? as usize;
-            let script_end = utxo_off.checked_add(script_len).ok_or_else(|| {
-                SignerError::SigningFailed(format!("witness UTXO {i} script length overflow"))
-            })?;
-            if script_end > utxo_data.len() {
-                return Err(SignerError::SigningFailed(format!(
-                    "witness UTXO {i} script truncated"
-                )));
-            }
-            let script_pk = utxo_data[utxo_off..script_end].to_vec();
+            let context = format!("witness UTXO {i}");
+            let (amount, script_pk) = parse_witness_utxo_value(utxo_data, &context)?;
             prevouts.push(TxOut {
                 value: amount,
-                script_pubkey: script_pk,
+                script_pubkey: script_pk.to_vec(),
             });
         }
 
@@ -406,8 +370,10 @@ impl Psbt {
     ///
     /// Parses the unsigned transaction from the global map (key `0x00`) to
     /// determine the exact number of input and output maps, then reads
-    /// that many maps in order. Falls back to heuristic classification
-    /// if the unsigned transaction is missing or invalid.
+    /// that many maps in order.
+    ///
+    /// Per BIP-174, this parser requires a valid unsigned transaction in the
+    /// global map and rejects malformed/truncated structures.
     pub fn deserialize(data: &[u8]) -> Result<Self, SignerError> {
         if data.len() < 5 {
             return Err(SignerError::ParseError("PSBT too short".into()));
@@ -492,7 +458,9 @@ fn parse_kv_map(
 
     loop {
         if *offset >= data.len() {
-            return Ok(map);
+            return Err(SignerError::ParseError(
+                "PSBT map missing terminator".into(),
+            ));
         }
 
         // Read key length
@@ -550,30 +518,64 @@ fn extract_tx_io_counts(raw_tx: &[u8]) -> Option<(usize, usize)> {
     // Skip version (4 bytes)
     let mut offset = 4;
     // Read input count
-    let num_inputs = encoding::read_compact_size(raw_tx, &mut offset).ok()? as usize;
+    let num_inputs =
+        usize::try_from(encoding::read_compact_size(raw_tx, &mut offset).ok()?).ok()?;
     // Skip all inputs: each has outpoint(36) + varint(script_len) + script + sequence(4)
     for _ in 0..num_inputs {
         // outpoint (32 txid + 4 vout)
-        if offset + 36 > raw_tx.len() {
+        offset = offset.checked_add(36)?;
+        if offset > raw_tx.len() {
             return None;
         }
-        offset += 36;
         // scriptSig length + data
-        let script_len = encoding::read_compact_size(raw_tx, &mut offset).ok()? as usize;
-        if offset + script_len + 4 > raw_tx.len() {
+        let script_len =
+            usize::try_from(encoding::read_compact_size(raw_tx, &mut offset).ok()?).ok()?;
+        let end = offset.checked_add(script_len)?.checked_add(4)?;
+        if end > raw_tx.len() {
             return None;
         }
-        offset += script_len;
-        // sequence
-        offset += 4;
+        offset = end;
     }
     // Read output count
-    let num_outputs = encoding::read_compact_size(raw_tx, &mut offset).ok()? as usize;
+    let num_outputs =
+        usize::try_from(encoding::read_compact_size(raw_tx, &mut offset).ok()?).ok()?;
     // Sanity check
     if num_inputs > 10_000 || num_outputs > 10_000 {
         return None;
     }
     Some((num_inputs, num_outputs))
+}
+
+fn parse_witness_utxo_value<'a>(
+    utxo_data: &'a [u8],
+    context: &str,
+) -> Result<(u64, &'a [u8]), SignerError> {
+    if utxo_data.len() < 9 {
+        return Err(SignerError::SigningFailed(format!("{context} too short")));
+    }
+    let mut amount_bytes = [0u8; 8];
+    amount_bytes.copy_from_slice(&utxo_data[..8]);
+    let amount = u64::from_le_bytes(amount_bytes);
+
+    let mut utxo_off = 8usize;
+    let script_len_u64 = encoding::read_compact_size(utxo_data, &mut utxo_off)?;
+    let script_len = usize::try_from(script_len_u64).map_err(|_| {
+        SignerError::SigningFailed(format!("{context} script length exceeds platform usize"))
+    })?;
+    let script_end = utxo_off
+        .checked_add(script_len)
+        .ok_or_else(|| SignerError::SigningFailed(format!("{context} script length overflow")))?;
+    if script_end > utxo_data.len() {
+        return Err(SignerError::SigningFailed(format!(
+            "{context} script truncated"
+        )));
+    }
+    if script_end != utxo_data.len() {
+        return Err(SignerError::SigningFailed(format!(
+            "{context} has trailing bytes"
+        )));
+    }
+    Ok((amount, &utxo_data[utxo_off..script_end]))
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -727,6 +729,38 @@ mod tests {
         data.extend_from_slice(&u64::MAX.to_le_bytes());
         let mut offset = 0;
         assert!(parse_kv_map(&data, &mut offset).is_err());
+    }
+
+    #[test]
+    fn test_parse_kv_map_rejects_missing_terminator() {
+        // key_len=1, key=0x01, val_len=1, val=0x02 (no terminating 0x00 key_len)
+        let data = vec![0x01, 0x01, 0x01, 0x02];
+        let mut offset = 0;
+        assert!(parse_kv_map(&data, &mut offset).is_err());
+    }
+
+    #[test]
+    fn test_extract_tx_io_counts_rejects_oversized_script_len() {
+        let mut raw_tx = Vec::new();
+        raw_tx.extend_from_slice(&1u32.to_le_bytes()); // version
+        raw_tx.push(0x01); // 1 input
+        raw_tx.extend_from_slice(&[0u8; 32]); // prev txid
+        raw_tx.extend_from_slice(&0u32.to_le_bytes()); // vout
+        raw_tx.push(0xFF); // script_len prefix (u64)
+        raw_tx.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(extract_tx_io_counts(&raw_tx), None);
+    }
+
+    #[test]
+    fn test_parse_witness_utxo_rejects_trailing_bytes() {
+        let mut utxo = Vec::new();
+        utxo.extend_from_slice(&50_000u64.to_le_bytes());
+        encoding::encode_compact_size(&mut utxo, 22);
+        utxo.extend_from_slice(&[0x00, 0x14]);
+        utxo.extend_from_slice(&[0xAA; 20]);
+        utxo.push(0x99); // trailing garbage
+
+        assert!(parse_witness_utxo_value(&utxo, "witness UTXO").is_err());
     }
 
     #[test]

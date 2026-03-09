@@ -14,6 +14,7 @@
 
 use crate::encoding;
 use crate::error::SignerError;
+use std::collections::HashSet;
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants — Global Key Types (BIP-370)
@@ -164,10 +165,10 @@ impl PsbtV2Input {
 
     /// Set a witness UTXO for this input.
     pub fn set_witness_utxo(&mut self, amount: u64, script_pubkey: &[u8]) {
-        let mut value = Vec::with_capacity(8 + script_pubkey.len() + 1);
+        let mut value = Vec::with_capacity(8 + script_pubkey.len() + 9);
         value.extend_from_slice(&amount.to_le_bytes());
         // CompactSize for script length
-        value.push(script_pubkey.len() as u8);
+        encoding::encode_compact_size(&mut value, script_pubkey.len() as u64);
         value.extend_from_slice(script_pubkey);
         self.extra.push((vec![input_key::WITNESS_UTXO], value));
     }
@@ -429,6 +430,7 @@ impl PsbtV2 {
         let mut input_count: Option<usize> = None;
         let mut output_count: Option<usize> = None;
         let mut found_version = false;
+        let mut seen_global_keys: HashSet<Vec<u8>> = HashSet::new();
 
         // Parse global map
         while pos < data.len() {
@@ -439,6 +441,12 @@ impl PsbtV2 {
 
             let (key, val, consumed) = read_kv(&data[pos..])?;
             pos += consumed;
+
+            if !seen_global_keys.insert(key.clone()) {
+                return Err(SignerError::ParseError(
+                    "PSBTv2: duplicate key in global map".into(),
+                ));
+            }
 
             if key.len() == 1 {
                 match key[0] {
@@ -480,9 +488,12 @@ impl PsbtV2 {
                         output_count = Some(read_compact_size(&val)?);
                     }
                     global_key::TX_MODIFIABLE => {
-                        if !val.is_empty() {
-                            psbt.modifiable = ModifiableFlags::from_byte(val[0]);
+                        if val.len() != 1 {
+                            return Err(SignerError::ParseError(
+                                "PSBTv2: tx_modifiable must be 1 byte".into(),
+                            ));
                         }
+                        psbt.modifiable = ModifiableFlags::from_byte(val[0]);
                     }
                     _ => {
                         psbt.global_extra.push((key, val));
@@ -508,6 +519,7 @@ impl PsbtV2 {
             let mut has_previous_txid = false;
             let mut has_output_index = false;
             let mut found_terminator = false;
+            let mut seen_input_keys: HashSet<Vec<u8>> = HashSet::new();
             while pos < data.len() {
                 if data[pos] == 0x00 {
                     pos += 1;
@@ -516,6 +528,12 @@ impl PsbtV2 {
                 }
                 let (key, val, consumed) = read_kv(&data[pos..])?;
                 pos += consumed;
+
+                if !seen_input_keys.insert(key.clone()) {
+                    return Err(SignerError::ParseError(format!(
+                        "PSBTv2: duplicate key in input map {i}"
+                    )));
+                }
 
                 if key.len() == 1 {
                     match key[0] {
@@ -621,6 +639,7 @@ impl PsbtV2 {
             let mut has_amount = false;
             let mut has_script = false;
             let mut found_terminator = false;
+            let mut seen_output_keys: HashSet<Vec<u8>> = HashSet::new();
             while pos < data.len() {
                 if data[pos] == 0x00 {
                     pos += 1;
@@ -629,6 +648,12 @@ impl PsbtV2 {
                 }
                 let (key, val, consumed) = read_kv(&data[pos..])?;
                 pos += consumed;
+
+                if !seen_output_keys.insert(key.clone()) {
+                    return Err(SignerError::ParseError(format!(
+                        "PSBTv2: duplicate key in output map {i}"
+                    )));
+                }
 
                 if key.len() == 1 {
                     match key[0] {
@@ -965,6 +990,20 @@ mod tests {
         assert_eq!(&value[9..13], &script[..]);
     }
 
+    #[test]
+    fn test_witness_utxo_encoding_large_script_uses_compact_size() {
+        let mut input = PsbtV2Input::new([0; 32], 0);
+        let script = vec![0xAB; 300];
+        input.set_witness_utxo(100_000, &script);
+        let value = &input.extra[0].1;
+
+        // 8-byte amount + compact-size(300) = 0xFD, 0x2C, 0x01
+        assert_eq!(value[8], 0xFD);
+        assert_eq!(value[9], 0x2C);
+        assert_eq!(value[10], 0x01);
+        assert_eq!(&value[11..], &script[..]);
+    }
+
     // ─── Computed Locktime ───────────────────────────────────────
 
     #[test]
@@ -1204,6 +1243,46 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_rejects_tx_modifiable_invalid_len() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"psbt\xFF");
+        write_kv(&mut data, &[global_key::VERSION], &2u32.to_le_bytes());
+        write_kv(&mut data, &[global_key::TX_VERSION], &2u32.to_le_bytes());
+        write_kv(
+            &mut data,
+            &[global_key::FALLBACK_LOCKTIME],
+            &0u32.to_le_bytes(),
+        );
+        write_kv(&mut data, &[global_key::INPUT_COUNT], &compact_size(0));
+        write_kv(&mut data, &[global_key::OUTPUT_COUNT], &compact_size(0));
+        write_kv(&mut data, &[global_key::TX_MODIFIABLE], &[0x01, 0x02]); // invalid length
+        data.push(0x00); // end global map
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_duplicate_global_key() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"psbt\xFF");
+        write_kv(&mut data, &[global_key::VERSION], &2u32.to_le_bytes());
+        write_kv(&mut data, &[global_key::TX_VERSION], &2u32.to_le_bytes());
+        write_kv(&mut data, &[global_key::TX_VERSION], &2u32.to_le_bytes()); // duplicate
+        write_kv(
+            &mut data,
+            &[global_key::FALLBACK_LOCKTIME],
+            &0u32.to_le_bytes(),
+        );
+        write_kv(&mut data, &[global_key::INPUT_COUNT], &compact_size(0));
+        write_kv(&mut data, &[global_key::OUTPUT_COUNT], &compact_size(0));
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_deserialize_rejects_input_missing_previous_txid() {
         let mut data = minimal_psbt_with_counts(1, 0);
         write_kv(&mut data, &[input_key::OUTPUT_INDEX], &0u32.to_le_bytes());
@@ -1224,6 +1303,18 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_rejects_duplicate_input_key() {
+        let mut data = minimal_psbt_with_counts(1, 0);
+        write_kv(&mut data, &[input_key::PREVIOUS_TXID], &[0xAA; 32]);
+        write_kv(&mut data, &[input_key::PREVIOUS_TXID], &[0xBB; 32]); // duplicate
+        write_kv(&mut data, &[input_key::OUTPUT_INDEX], &0u32.to_le_bytes());
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_deserialize_rejects_output_missing_amount() {
         let mut data = minimal_psbt_with_counts(0, 1);
         write_kv(&mut data, &[output_key::SCRIPT], &[0x51]);
@@ -1237,6 +1328,18 @@ mod tests {
     fn test_deserialize_rejects_output_missing_script() {
         let mut data = minimal_psbt_with_counts(0, 1);
         write_kv(&mut data, &[output_key::AMOUNT], &50_000u64.to_le_bytes());
+        data.push(0x00);
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_duplicate_output_key() {
+        let mut data = minimal_psbt_with_counts(0, 1);
+        write_kv(&mut data, &[output_key::AMOUNT], &50_000u64.to_le_bytes());
+        write_kv(&mut data, &[output_key::AMOUNT], &60_000u64.to_le_bytes()); // duplicate
+        write_kv(&mut data, &[output_key::SCRIPT], &[0x51]);
         data.push(0x00);
 
         let result = PsbtV2::deserialize(&data);
