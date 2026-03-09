@@ -729,6 +729,18 @@ mod tests {
     }
 
     #[test]
+    fn test_add_multiple_inputs() {
+        let mut psbt = PsbtV2::new();
+        let i0 = psbt.add_input(PsbtV2Input::new([0x01; 32], 0));
+        let i1 = psbt.add_input(PsbtV2Input::new([0x02; 32], 1));
+        let i2 = psbt.add_input(PsbtV2Input::new([0x03; 32], 2));
+        assert_eq!(i0, 0);
+        assert_eq!(i1, 1);
+        assert_eq!(i2, 2);
+        assert_eq!(psbt.inputs[2].output_index, 2);
+    }
+
+    #[test]
     fn test_add_output() {
         let mut psbt = PsbtV2::new();
         let idx = psbt.add_output(PsbtV2Output::new(50_000, vec![0x00, 0x14]));
@@ -738,9 +750,23 @@ mod tests {
     }
 
     #[test]
+    fn test_input_default_sequence() {
+        let input = PsbtV2Input::new([0; 32], 0);
+        assert_eq!(input.sequence, 0xFFFFFFFF);
+    }
+
+    #[test]
     fn test_input_with_sequence() {
         let input = PsbtV2Input::new([0; 32], 0).with_sequence(0xFFFFFFFD);
         assert_eq!(input.sequence, 0xFFFFFFFD);
+    }
+
+    #[test]
+    fn test_input_rbf_sequence() {
+        // RBF = 0xFFFFFFFD (enables opt-in Replace-By-Fee)
+        let input = PsbtV2Input::new([0; 32], 0).with_sequence(0xFFFFFFFD);
+        assert_eq!(input.sequence, 0xFFFFFFFD);
+        assert_ne!(input.sequence, 0xFFFFFFFF);
     }
 
     // ─── Witness UTXO ────────────────────────────────────────────
@@ -754,6 +780,20 @@ mod tests {
         assert_eq!(input.extra[0].0, vec![input_key::WITNESS_UTXO]);
     }
 
+    #[test]
+    fn test_witness_utxo_encoding() {
+        let mut input = PsbtV2Input::new([0; 32], 0);
+        let script = vec![0x00, 0x14, 0xAA, 0xBB];
+        input.set_witness_utxo(100_000, &script);
+        let value = &input.extra[0].1;
+        // First 8 bytes: amount LE
+        let amount = u64::from_le_bytes(value[0..8].try_into().unwrap());
+        assert_eq!(amount, 100_000);
+        // Then compact size + script
+        assert_eq!(value[8], 4); // script length
+        assert_eq!(&value[9..13], &script[..]);
+    }
+
     // ─── Computed Locktime ───────────────────────────────────────
 
     #[test]
@@ -764,14 +804,28 @@ mod tests {
     }
 
     #[test]
+    fn test_computed_locktime_no_inputs() {
+        let psbt = PsbtV2::new();
+        assert_eq!(psbt.computed_locktime(), 0);
+    }
+
+    #[test]
     fn test_computed_locktime_height_priority() {
         let mut psbt = PsbtV2::new();
         let mut i1 = PsbtV2Input::new([0; 32], 0);
         i1.required_time_locktime = Some(1_700_000_000);
         i1.required_height_locktime = Some(800_000);
         psbt.add_input(i1);
-        // Height takes priority
         assert_eq!(psbt.computed_locktime(), 800_000);
+    }
+
+    #[test]
+    fn test_computed_locktime_time_only() {
+        let mut psbt = PsbtV2::new();
+        let mut i1 = PsbtV2Input::new([0; 32], 0);
+        i1.required_time_locktime = Some(1_700_000_000);
+        psbt.add_input(i1);
+        assert_eq!(psbt.computed_locktime(), 1_700_000_000);
     }
 
     #[test]
@@ -786,6 +840,28 @@ mod tests {
         assert_eq!(psbt.computed_locktime(), 200_000);
     }
 
+    #[test]
+    fn test_computed_locktime_max_time_across_inputs() {
+        let mut psbt = PsbtV2::new();
+        let mut i1 = PsbtV2Input::new([0; 32], 0);
+        i1.required_time_locktime = Some(1_600_000_000);
+        let mut i2 = PsbtV2Input::new([1; 32], 0);
+        i2.required_time_locktime = Some(1_700_000_000);
+        psbt.add_input(i1);
+        psbt.add_input(i2);
+        assert_eq!(psbt.computed_locktime(), 1_700_000_000);
+    }
+
+    #[test]
+    fn test_computed_locktime_inputs_without_timelocks() {
+        let mut psbt = PsbtV2::new();
+        psbt.fallback_locktime = 500_000;
+        psbt.add_input(PsbtV2Input::new([0; 32], 0));
+        psbt.add_input(PsbtV2Input::new([1; 32], 0));
+        // No timelocks set → falls back
+        assert_eq!(psbt.computed_locktime(), 500_000);
+    }
+
     // ─── Modifiable Flags ────────────────────────────────────────
 
     #[test]
@@ -796,11 +872,49 @@ mod tests {
     }
 
     #[test]
+    fn test_modifiable_flags_inputs_only() {
+        let f = ModifiableFlags::INPUTS_MODIFIABLE;
+        assert!(f.inputs_modifiable());
+        assert!(!f.outputs_modifiable());
+    }
+
+    #[test]
+    fn test_modifiable_flags_outputs_only() {
+        let f = ModifiableFlags::OUTPUTS_MODIFIABLE;
+        assert!(!f.inputs_modifiable());
+        assert!(f.outputs_modifiable());
+    }
+
+    #[test]
     fn test_modifiable_flags_union() {
         let f = ModifiableFlags::INPUTS_MODIFIABLE.union(ModifiableFlags::OUTPUTS_MODIFIABLE);
         assert!(f.inputs_modifiable());
         assert!(f.outputs_modifiable());
         assert_eq!(f.to_byte(), 0x03);
+    }
+
+    #[test]
+    fn test_modifiable_flags_sighash_single() {
+        let f = ModifiableFlags::HAS_SIGHASH_SINGLE;
+        assert!(!f.inputs_modifiable());
+        assert!(!f.outputs_modifiable());
+        assert_eq!(f.to_byte(), 0x04);
+    }
+
+    #[test]
+    fn test_modifiable_flags_all() {
+        let f = ModifiableFlags::INPUTS_MODIFIABLE
+            .union(ModifiableFlags::OUTPUTS_MODIFIABLE)
+            .union(ModifiableFlags::HAS_SIGHASH_SINGLE);
+        assert_eq!(f.to_byte(), 0x07);
+    }
+
+    #[test]
+    fn test_modifiable_flags_from_byte() {
+        let f = ModifiableFlags::from_byte(0xFF);
+        assert!(f.inputs_modifiable());
+        assert!(f.outputs_modifiable());
+        assert_eq!(f.to_byte(), 0xFF);
     }
 
     // ─── Serialization Round-Trip ────────────────────────────────
@@ -834,11 +948,56 @@ mod tests {
     }
 
     #[test]
+    fn test_serialize_empty_psbt_roundtrip() {
+        let psbt = PsbtV2::new();
+        let data = psbt.serialize();
+        let rt = PsbtV2::deserialize(&data).unwrap();
+        assert_eq!(rt.tx_version, 2);
+        assert_eq!(rt.inputs.len(), 0);
+        assert_eq!(rt.outputs.len(), 0);
+    }
+
+    #[test]
     fn test_serialize_starts_with_magic() {
         let psbt = PsbtV2::new();
         let data = psbt.serialize();
         assert_eq!(&data[0..5], b"psbt\xFF");
     }
+
+    #[test]
+    fn test_serialize_output_script_preserved() {
+        let script = vec![0x76, 0xA9, 0x14, 0xAA, 0xBB, 0xCC];
+        let mut psbt = PsbtV2::new();
+        psbt.add_output(PsbtV2Output::new(1_000_000, script.clone()));
+        let data = psbt.serialize();
+        let rt = PsbtV2::deserialize(&data).unwrap();
+        assert_eq!(rt.outputs[0].script, script);
+    }
+
+    #[test]
+    fn test_serialize_large_amount() {
+        let mut psbt = PsbtV2::new();
+        psbt.add_output(PsbtV2Output::new(21_000_000 * 100_000_000, vec![0x00]));
+        let data = psbt.serialize();
+        let rt = PsbtV2::deserialize(&data).unwrap();
+        assert_eq!(rt.outputs[0].amount, 21_000_000 * 100_000_000);
+    }
+
+    #[test]
+    fn test_serialize_roundtrip_with_timelocks() {
+        let mut psbt = PsbtV2::new();
+        let mut input = PsbtV2Input::new([0xAA; 32], 0);
+        input.required_time_locktime = Some(1_700_000_000);
+        input.required_height_locktime = Some(800_000);
+        psbt.add_input(input);
+
+        let data = psbt.serialize();
+        let rt = PsbtV2::deserialize(&data).unwrap();
+        assert_eq!(rt.inputs[0].required_time_locktime, Some(1_700_000_000));
+        assert_eq!(rt.inputs[0].required_height_locktime, Some(800_000));
+    }
+
+    // ─── Deserialization Errors ──────────────────────────────────
 
     #[test]
     fn test_deserialize_invalid_magic() {
@@ -849,6 +1008,27 @@ mod tests {
     #[test]
     fn test_deserialize_too_short() {
         let result = PsbtV2::deserialize(b"psbt");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_empty() {
+        let result = PsbtV2::deserialize(b"");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_wrong_version() {
+        // Construct a valid-looking PSBT but with version=1
+        let mut psbt = PsbtV2::new();
+        let data = psbt.serialize();
+        // Manually patch the version to 1
+        let mut patched = data.clone();
+        // Find version KV and change value
+        // Version is first KV after magic: key_len=1, key=0xFB, val_len=4, val=02000000
+        // Position: 5 (magic) + 1 (key_len) + 1(key) + 1(val_len) = 8, then 4 bytes value
+        patched[8] = 1; // change version to 1
+        let result = PsbtV2::deserialize(&patched);
         assert!(result.is_err());
     }
 
@@ -873,6 +1053,40 @@ mod tests {
         assert_eq!(rt.outputs[1].amount, 20_000);
     }
 
+    #[test]
+    fn test_roundtrip_10_inputs() {
+        let mut psbt = PsbtV2::new();
+        for i in 0..10u8 {
+            psbt.add_input(PsbtV2Input::new([i; 32], i as u32));
+        }
+        psbt.add_output(PsbtV2Output::new(1_000_000, vec![0x00]));
+
+        let data = psbt.serialize();
+        let rt = PsbtV2::deserialize(&data).unwrap();
+        assert_eq!(rt.inputs.len(), 10);
+        for i in 0..10u8 {
+            assert_eq!(rt.inputs[i as usize].previous_txid, [i; 32]);
+            assert_eq!(rt.inputs[i as usize].output_index, i as u32);
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_asymmetric_io() {
+        // 5 inputs, 2 outputs
+        let mut psbt = PsbtV2::new();
+        for i in 0..5u8 {
+            psbt.add_input(PsbtV2Input::new([i; 32], 0));
+        }
+        for i in 0..2u8 {
+            psbt.add_output(PsbtV2Output::new(50_000, vec![i]));
+        }
+
+        let data = psbt.serialize();
+        let rt = PsbtV2::deserialize(&data).unwrap();
+        assert_eq!(rt.inputs.len(), 5);
+        assert_eq!(rt.outputs.len(), 2);
+    }
+
     // ─── Compact Size ────────────────────────────────────────────
 
     #[test]
@@ -882,10 +1096,104 @@ mod tests {
     }
 
     #[test]
+    fn test_compact_size_boundary_253() {
+        // 253 triggers 0xFD prefix
+        let cs = compact_size(253);
+        assert_eq!(cs[0], 0xFD);
+        assert_eq!(u16::from_le_bytes([cs[1], cs[2]]), 253);
+    }
+
+    #[test]
     fn test_compact_size_medium() {
         let cs = compact_size(300);
         assert_eq!(cs[0], 0xFD);
         assert_eq!(u16::from_le_bytes([cs[1], cs[2]]), 300);
+    }
+
+    #[test]
+    fn test_compact_size_max_u16() {
+        let cs = compact_size(65535);
+        assert_eq!(cs[0], 0xFD);
+        assert_eq!(u16::from_le_bytes([cs[1], cs[2]]), 65535);
+    }
+
+    #[test]
+    fn test_compact_size_large() {
+        let cs = compact_size(70000);
+        assert_eq!(cs[0], 0xFE);
+        assert_eq!(
+            u32::from_le_bytes([cs[1], cs[2], cs[3], cs[4]]),
+            70000
+        );
+    }
+
+    // ─── Read Compact Size ───────────────────────────────────────
+
+    #[test]
+    fn test_read_compact_size_small() {
+        assert_eq!(read_compact_size(&[42]), 42);
+        assert_eq!(read_compact_size(&[0]), 0);
+        assert_eq!(read_compact_size(&[252]), 252);
+    }
+
+    #[test]
+    fn test_read_compact_size_medium() {
+        let data = [0xFD, 0x00, 0x01]; // 256
+        assert_eq!(read_compact_size(&data), 256);
+    }
+
+    #[test]
+    fn test_read_compact_size_empty() {
+        assert_eq!(read_compact_size(&[]), 0);
+    }
+
+    // ─── KV Helpers ──────────────────────────────────────────────
+
+    #[test]
+    fn test_write_kv_roundtrip() {
+        let mut buf = Vec::new();
+        write_kv(&mut buf, &[0x42], &[0xAA, 0xBB, 0xCC]);
+        let (key, val, consumed) = read_kv(&buf).unwrap();
+        assert_eq!(key, vec![0x42]);
+        assert_eq!(val, vec![0xAA, 0xBB, 0xCC]);
+        assert_eq!(consumed, buf.len());
+    }
+
+    #[test]
+    fn test_write_kv_empty_value() {
+        let mut buf = Vec::new();
+        write_kv(&mut buf, &[0x01], &[]);
+        let (key, val, consumed) = read_kv(&buf).unwrap();
+        assert_eq!(key, vec![0x01]);
+        assert!(val.is_empty());
+        assert_eq!(consumed, buf.len());
+    }
+
+    // ─── Input Serialization ────────────────────────────────────
+
+    #[test]
+    fn test_input_serialize_basic() {
+        let input = PsbtV2Input::new([0xAA; 32], 5);
+        let data = input.serialize();
+        // Should end with terminator 0x00
+        assert_eq!(data[data.len() - 1], 0x00);
+    }
+
+    #[test]
+    fn test_input_serialize_with_witness_utxo() {
+        let mut input = PsbtV2Input::new([0; 32], 0);
+        input.set_witness_utxo(50_000, &[0x00, 0x14]);
+        let data = input.serialize();
+        assert!(data.len() > 40); // must be bigger than just basic fields
+    }
+
+    // ─── Output Serialization ───────────────────────────────────
+
+    #[test]
+    fn test_output_serialize_basic() {
+        let output = PsbtV2Output::new(100_000, vec![0xAA, 0xBB]);
+        let data = output.serialize();
+        assert_eq!(data[data.len() - 1], 0x00);
     }
 
     // ─── Default Trait ───────────────────────────────────────────
@@ -894,5 +1202,36 @@ mod tests {
     fn test_default_trait() {
         let psbt = PsbtV2::default();
         assert_eq!(psbt.tx_version, 2);
+    }
+
+    // ─── Global Key Constants ────────────────────────────────────
+
+    #[test]
+    fn test_global_key_values() {
+        assert_eq!(global_key::TX_VERSION, 0x02);
+        assert_eq!(global_key::FALLBACK_LOCKTIME, 0x03);
+        assert_eq!(global_key::INPUT_COUNT, 0x04);
+        assert_eq!(global_key::OUTPUT_COUNT, 0x05);
+        assert_eq!(global_key::TX_MODIFIABLE, 0x06);
+        assert_eq!(global_key::VERSION, 0xFB);
+    }
+
+    #[test]
+    fn test_input_key_values() {
+        assert_eq!(input_key::PREVIOUS_TXID, 0x0E);
+        assert_eq!(input_key::OUTPUT_INDEX, 0x0F);
+        assert_eq!(input_key::SEQUENCE, 0x10);
+        assert_eq!(input_key::REQUIRED_TIME_LOCKTIME, 0x11);
+        assert_eq!(input_key::REQUIRED_HEIGHT_LOCKTIME, 0x12);
+        assert_eq!(input_key::NON_WITNESS_UTXO, 0x00);
+        assert_eq!(input_key::WITNESS_UTXO, 0x01);
+    }
+
+    #[test]
+    fn test_output_key_values() {
+        assert_eq!(output_key::AMOUNT, 0x03);
+        assert_eq!(output_key::SCRIPT, 0x04);
+        assert_eq!(output_key::REDEEM_SCRIPT, 0x00);
+        assert_eq!(output_key::WITNESS_SCRIPT, 0x01);
     }
 }

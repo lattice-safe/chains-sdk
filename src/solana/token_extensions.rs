@@ -528,15 +528,47 @@ mod tests {
     const AUTH: [u8; 32] = [0xBB; 32];
     const DEST: [u8; 32] = [0xCC; 32];
 
+    // ─── Program ID ──────────────────────────────────────────────
+
+    #[test]
+    fn test_token_2022_program_id_length() {
+        assert_eq!(TOKEN_2022_ID.len(), 32);
+    }
+
+    #[test]
+    fn test_all_instructions_use_token_2022_id() {
+        let ix1 = initialize_default_account_state(&MINT, AccountState::Frozen);
+        let ix2 = initialize_transfer_fee_config(&MINT, None, None, 0, 0);
+        let ix3 = initialize_transfer_hook(&MINT, None, &[0; 32]);
+        let ix4 = enable_cpi_guard(&MINT, &AUTH);
+        let ix5 = initialize_permanent_delegate(&MINT, &AUTH);
+        let ix6 = enable_required_memo_transfers(&MINT, &AUTH);
+        let ix7 = initialize_interest_bearing_config(&MINT, None, 0);
+        for ix in [ix1, ix2, ix3, ix4, ix5, ix6, ix7] {
+            assert_eq!(ix.program_id, TOKEN_2022_ID);
+        }
+    }
+
     // ─── Default Account State ───────────────────────────────────
 
     #[test]
     fn test_initialize_default_account_state() {
         let ix = initialize_default_account_state(&MINT, AccountState::Frozen);
-        assert_eq!(ix.program_id, TOKEN_2022_ID);
-        assert_eq!(ix.data[0], 29); // extension discriminator
-        assert_eq!(ix.data[1], 0); // sub-instruction
+        assert_eq!(ix.data[0], 29);
+        assert_eq!(ix.data[1], 0);
         assert_eq!(ix.data[2], 2); // Frozen
+    }
+
+    #[test]
+    fn test_initialize_default_account_state_initialized() {
+        let ix = initialize_default_account_state(&MINT, AccountState::Initialized);
+        assert_eq!(ix.data[2], 1);
+    }
+
+    #[test]
+    fn test_initialize_default_account_state_uninitialized() {
+        let ix = initialize_default_account_state(&MINT, AccountState::Uninitialized);
+        assert_eq!(ix.data[2], 0);
     }
 
     #[test]
@@ -544,8 +576,17 @@ mod tests {
         let ix = update_default_account_state(&MINT, &AUTH, AccountState::Initialized);
         assert_eq!(ix.data[0], 29);
         assert_eq!(ix.data[1], 1);
-        assert_eq!(ix.data[2], 1); // Initialized
+        assert_eq!(ix.data[2], 1);
         assert_eq!(ix.accounts.len(), 2);
+    }
+
+    #[test]
+    fn test_update_default_account_state_accounts() {
+        let ix = update_default_account_state(&MINT, &AUTH, AccountState::Frozen);
+        assert_eq!(ix.accounts[0].pubkey, MINT);
+        assert!(!ix.accounts[0].is_signer);
+        assert_eq!(ix.accounts[1].pubkey, AUTH);
+        assert!(ix.accounts[1].is_signer);
     }
 
     // ─── Transfer Fee ────────────────────────────────────────────
@@ -556,13 +597,36 @@ mod tests {
             &MINT,
             Some(&AUTH),
             Some(&DEST),
-            100, // 1%
+            100,
             1_000_000,
         );
         assert_eq!(ix.data[0], 26);
         assert_eq!(ix.data[1], 0);
-        // Has option bytes + pubkeys
         assert!(ix.data.len() > 70);
+    }
+
+    #[test]
+    fn test_initialize_transfer_fee_config_data_structure() {
+        let ix = initialize_transfer_fee_config(
+            &MINT,
+            Some(&AUTH),
+            Some(&DEST),
+            200,      // 2%
+            5_000_000,
+        );
+        // [26, 0, 1, AUTH(32), 1, DEST(32), fee_bps(2), max_fee(8)]
+        assert_eq!(ix.data[0], 26);
+        assert_eq!(ix.data[1], 0);
+        assert_eq!(ix.data[2], 1); // Some for config authority
+        assert_eq!(&ix.data[3..35], &AUTH);
+        assert_eq!(ix.data[35], 1); // Some for withdraw authority
+        assert_eq!(&ix.data[36..68], &DEST);
+        // Fee basis points
+        let bps = u16::from_le_bytes([ix.data[68], ix.data[69]]);
+        assert_eq!(bps, 200);
+        // Max fee
+        let max_fee = u64::from_le_bytes(ix.data[70..78].try_into().unwrap());
+        assert_eq!(max_fee, 5_000_000);
     }
 
     #[test]
@@ -570,6 +634,8 @@ mod tests {
         let ix = initialize_transfer_fee_config(&MINT, None, None, 50, 500);
         assert_eq!(ix.data[0], 26);
         assert_eq!(ix.data[2], 0); // None for first authority
+        assert_eq!(&ix.data[3..35], &[0u8; 32]); // zero pubkey
+        assert_eq!(ix.data[35], 0); // None for second
     }
 
     #[test]
@@ -577,7 +643,20 @@ mod tests {
         let accounts = vec![[0x11; 32], [0x22; 32]];
         let ix = harvest_withheld_tokens_to_mint(&MINT, &accounts);
         assert_eq!(ix.data, vec![26, 4]);
-        assert_eq!(ix.accounts.len(), 3); // mint + 2 token accounts
+        assert_eq!(ix.accounts.len(), 3);
+    }
+
+    #[test]
+    fn test_harvest_withheld_tokens_empty() {
+        let ix = harvest_withheld_tokens_to_mint(&MINT, &[]);
+        assert_eq!(ix.accounts.len(), 1); // just the mint
+    }
+
+    #[test]
+    fn test_harvest_withheld_tokens_many() {
+        let accounts: Vec<[u8; 32]> = (0..10).map(|i| [i; 32]).collect();
+        let ix = harvest_withheld_tokens_to_mint(&MINT, &accounts);
+        assert_eq!(ix.accounts.len(), 11); // mint + 10
     }
 
     #[test]
@@ -585,6 +664,10 @@ mod tests {
         let ix = withdraw_withheld_tokens_from_mint(&MINT, &DEST, &AUTH);
         assert_eq!(ix.data, vec![26, 3]);
         assert_eq!(ix.accounts.len(), 3);
+        assert_eq!(ix.accounts[0].pubkey, MINT);
+        assert_eq!(ix.accounts[1].pubkey, DEST);
+        assert_eq!(ix.accounts[2].pubkey, AUTH);
+        assert!(ix.accounts[2].is_signer);
     }
 
     // ─── Transfer Hook ───────────────────────────────────────────
@@ -596,6 +679,8 @@ mod tests {
         assert_eq!(ix.data[0], 36);
         assert_eq!(ix.data[1], 0);
         assert_eq!(ix.data[2], 1); // Some
+        assert_eq!(&ix.data[3..35], &AUTH);
+        assert_eq!(&ix.data[35..67], &hook_program);
     }
 
     #[test]
@@ -603,6 +688,8 @@ mod tests {
         let hook_program = [0xDD; 32];
         let ix = initialize_transfer_hook(&MINT, None, &hook_program);
         assert_eq!(ix.data[2], 0); // None
+        assert_eq!(&ix.data[3..35], &[0u8; 32]);
+        assert_eq!(&ix.data[35..67], &hook_program);
     }
 
     #[test]
@@ -612,6 +699,15 @@ mod tests {
         assert_eq!(ix.data[0], 36);
         assert_eq!(ix.data[1], 1);
         assert_eq!(&ix.data[2..34], &new_program);
+    }
+
+    #[test]
+    fn test_update_transfer_hook_accounts() {
+        let ix = update_transfer_hook(&MINT, &AUTH, &[0; 32]);
+        assert_eq!(ix.accounts[0].pubkey, MINT);
+        assert!(!ix.accounts[0].is_signer);
+        assert_eq!(ix.accounts[1].pubkey, AUTH);
+        assert!(ix.accounts[1].is_signer);
     }
 
     // ─── CPI Guard ───────────────────────────────────────────────
@@ -629,6 +725,13 @@ mod tests {
         assert_eq!(ix.data, vec![37, 1]);
     }
 
+    #[test]
+    fn test_cpi_guard_toggle_differ() {
+        let enable = enable_cpi_guard(&MINT, &AUTH);
+        let disable = disable_cpi_guard(&MINT, &AUTH);
+        assert_ne!(enable.data, disable.data);
+    }
+
     // ─── Permanent Delegate ──────────────────────────────────────
 
     #[test]
@@ -637,6 +740,13 @@ mod tests {
         assert_eq!(ix.data[0], 35);
         assert_eq!(ix.data[1], 0);
         assert_eq!(&ix.data[2..34], &AUTH);
+        assert_eq!(ix.accounts.len(), 1);
+    }
+
+    #[test]
+    fn test_permanent_delegate_data_length() {
+        let ix = initialize_permanent_delegate(&MINT, &AUTH);
+        assert_eq!(ix.data.len(), 2 + 32); // discriminator + delegate pubkey
     }
 
     // ─── Memo Transfer ───────────────────────────────────────────
@@ -653,6 +763,13 @@ mod tests {
         assert_eq!(ix.data, vec![30, 1]);
     }
 
+    #[test]
+    fn test_memo_toggle_differ() {
+        let enable = enable_required_memo_transfers(&MINT, &AUTH);
+        let disable = disable_required_memo_transfers(&MINT, &AUTH);
+        assert_ne!(enable.data, disable.data);
+    }
+
     // ─── Interest-Bearing Config ─────────────────────────────────
 
     #[test]
@@ -661,10 +778,24 @@ mod tests {
         assert_eq!(ix.data[0], 33);
         assert_eq!(ix.data[1], 0);
         assert_eq!(ix.data[2], 1); // Some
-        // Check rate is at the end
         let rate_offset = ix.data.len() - 2;
         let rate = i16::from_le_bytes([ix.data[rate_offset], ix.data[rate_offset + 1]]);
         assert_eq!(rate, 500);
+    }
+
+    #[test]
+    fn test_initialize_interest_bearing_no_authority() {
+        let ix = initialize_interest_bearing_config(&MINT, None, 100);
+        assert_eq!(ix.data[2], 0); // None
+        assert_eq!(&ix.data[3..35], &[0u8; 32]);
+    }
+
+    #[test]
+    fn test_initialize_interest_bearing_negative_rate() {
+        let ix = initialize_interest_bearing_config(&MINT, Some(&AUTH), -500);
+        let rate_offset = ix.data.len() - 2;
+        let rate = i16::from_le_bytes([ix.data[rate_offset], ix.data[rate_offset + 1]]);
+        assert_eq!(rate, -500);
     }
 
     #[test]
@@ -674,6 +805,13 @@ mod tests {
         assert_eq!(ix.data[1], 1);
         let rate = i16::from_le_bytes([ix.data[2], ix.data[3]]);
         assert_eq!(rate, -100);
+    }
+
+    #[test]
+    fn test_update_interest_rate_positive() {
+        let ix = update_interest_rate(&MINT, &AUTH, 1000);
+        let rate = i16::from_le_bytes([ix.data[2], ix.data[3]]);
+        assert_eq!(rate, 1000);
     }
 
     // ─── Token Metadata ──────────────────────────────────────────
@@ -686,8 +824,50 @@ mod tests {
         );
         assert_eq!(ix.program_id, TOKEN_2022_ID);
         assert_eq!(ix.accounts.len(), 3);
-        // Should start with the 8-byte discriminator
-        assert_eq!(ix.data.len(), 8 + 4 + 10 + 4 + 4 + 4 + 29); // disc + 3 strings with length prefix
+        assert_eq!(ix.data.len(), 8 + 4 + 10 + 4 + 4 + 4 + 29);
+    }
+
+    #[test]
+    fn test_initialize_token_metadata_discriminator() {
+        let ix = initialize_token_metadata(
+            &MINT, &AUTH, &AUTH, "X", "Y", "Z",
+        );
+        // Known discriminator: [210, 225, 30, 162, 88, 184, 226, 143]
+        assert_eq!(&ix.data[0..8], &[210, 225, 30, 162, 88, 184, 226, 143]);
+    }
+
+    #[test]
+    fn test_initialize_token_metadata_string_encoding() {
+        let ix = initialize_token_metadata(
+            &MINT, &AUTH, &AUTH, "MyToken", "MTK", "https://uri",
+        );
+        // After 8-byte discriminator:
+        // name: u32(7) + "MyToken"
+        let name_len = u32::from_le_bytes(ix.data[8..12].try_into().unwrap());
+        assert_eq!(name_len, 7);
+        assert_eq!(&ix.data[12..19], b"MyToken");
+        // symbol: u32(3) + "MTK"
+        let sym_len = u32::from_le_bytes(ix.data[19..23].try_into().unwrap());
+        assert_eq!(sym_len, 3);
+        assert_eq!(&ix.data[23..26], b"MTK");
+        // uri
+        let uri_len = u32::from_le_bytes(ix.data[26..30].try_into().unwrap());
+        assert_eq!(uri_len, 11);
+        assert_eq!(&ix.data[30..41], b"https://uri");
+    }
+
+    #[test]
+    fn test_initialize_token_metadata_accounts() {
+        let mint_auth = [0xDD; 32];
+        let ix = initialize_token_metadata(
+            &MINT, &AUTH, &mint_auth, "X", "Y", "Z",
+        );
+        assert_eq!(ix.accounts[0].pubkey, MINT);
+        assert!(!ix.accounts[0].is_signer);
+        assert_eq!(ix.accounts[1].pubkey, AUTH);
+        assert!(!ix.accounts[1].is_signer); // update_authority is not signer for init
+        assert_eq!(ix.accounts[2].pubkey, mint_auth);
+        assert!(ix.accounts[2].is_signer); // mint_authority IS signer
     }
 
     #[test]
@@ -695,8 +875,24 @@ mod tests {
         let ix = update_token_metadata_field(&MINT, &AUTH, "name", "New Name");
         assert_eq!(ix.program_id, TOKEN_2022_ID);
         assert_eq!(ix.accounts.len(), 2);
-        // Discriminator (8) + "name" (4+4) + "New Name" (4+8)
         assert_eq!(ix.data.len(), 8 + 4 + 4 + 4 + 8);
+    }
+
+    #[test]
+    fn test_update_token_metadata_field_discriminator() {
+        let ix = update_token_metadata_field(&MINT, &AUTH, "x", "y");
+        assert_eq!(&ix.data[0..8], &[221, 233, 49, 45, 181, 202, 220, 200]);
+    }
+
+    #[test]
+    fn test_update_token_metadata_field_encoding() {
+        let ix = update_token_metadata_field(&MINT, &AUTH, "uri", "https://new");
+        let field_len = u32::from_le_bytes(ix.data[8..12].try_into().unwrap());
+        assert_eq!(field_len, 3);
+        assert_eq!(&ix.data[12..15], b"uri");
+        let val_len = u32::from_le_bytes(ix.data[15..19].try_into().unwrap());
+        assert_eq!(val_len, 11);
+        assert_eq!(&ix.data[19..30], b"https://new");
     }
 
     // ─── Group / Member ──────────────────────────────────────────
@@ -707,6 +903,17 @@ mod tests {
         let ix = initialize_group_pointer(&MINT, Some(&AUTH), &group_addr);
         assert_eq!(ix.data[0], 40);
         assert_eq!(ix.data[1], 0);
+        assert_eq!(ix.data[2], 1); // Some
+        assert_eq!(&ix.data[3..35], &AUTH);
+        assert_eq!(&ix.data[35..67], &group_addr);
+    }
+
+    #[test]
+    fn test_initialize_group_pointer_no_authority() {
+        let group_addr = [0xFF; 32];
+        let ix = initialize_group_pointer(&MINT, None, &group_addr);
+        assert_eq!(ix.data[2], 0); // None
+        assert_eq!(&ix.data[3..35], &[0u8; 32]);
     }
 
     #[test]
@@ -718,6 +925,15 @@ mod tests {
         assert_eq!(ix.data[2], 0); // None
     }
 
+    #[test]
+    fn test_initialize_group_member_pointer_with_authority() {
+        let member_addr = [0xEE; 32];
+        let ix = initialize_group_member_pointer(&MINT, Some(&AUTH), &member_addr);
+        assert_eq!(ix.data[2], 1); // Some
+        assert_eq!(&ix.data[3..35], &AUTH);
+        assert_eq!(&ix.data[35..67], &member_addr);
+    }
+
     // ─── Account State Enum ──────────────────────────────────────
 
     #[test]
@@ -725,5 +941,30 @@ mod tests {
         assert_eq!(AccountState::Uninitialized as u8, 0);
         assert_eq!(AccountState::Initialized as u8, 1);
         assert_eq!(AccountState::Frozen as u8, 2);
+    }
+
+    #[test]
+    fn test_account_state_eq() {
+        assert_eq!(AccountState::Frozen, AccountState::Frozen);
+        assert_ne!(AccountState::Frozen, AccountState::Initialized);
+    }
+
+    // ─── Extension Discriminators ────────────────────────────────
+
+    #[test]
+    fn test_all_discriminator_values() {
+        // Verify each extension uses a distinct discriminator
+        let discriminators = [
+            initialize_transfer_fee_config(&MINT, None, None, 0, 0).data[0],         // 26
+            initialize_default_account_state(&MINT, AccountState::Frozen).data[0],     // 29
+            enable_required_memo_transfers(&MINT, &AUTH).data[0],                       // 30
+            initialize_interest_bearing_config(&MINT, None, 0).data[0],                // 33
+            initialize_permanent_delegate(&MINT, &AUTH).data[0],                        // 35
+            initialize_transfer_hook(&MINT, None, &[0; 32]).data[0],                   // 36
+            enable_cpi_guard(&MINT, &AUTH).data[0],                                     // 37
+            initialize_group_pointer(&MINT, None, &[0; 32]).data[0],                   // 40
+            initialize_group_member_pointer(&MINT, None, &[0; 32]).data[0],            // 41
+        ];
+        assert_eq!(discriminators, [26, 29, 30, 33, 35, 36, 37, 40, 41]);
     }
 }

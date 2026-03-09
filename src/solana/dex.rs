@@ -342,6 +342,10 @@ mod tests {
     const SRC_MINT: [u8; 32] = [0x04; 32];
     const DST_MINT: [u8; 32] = [0x05; 32];
 
+    fn dummy_raydium_accounts() -> Vec<[u8; 32]> {
+        (0..14).map(|i| [i + 10u8; 32]).collect()
+    }
+
     // ─── SwapParams ──────────────────────────────────────────────
 
     #[test]
@@ -370,24 +374,75 @@ mod tests {
         assert_eq!(params.minimum_out_amount, 200);
     }
 
+    #[test]
+    fn test_swap_params_max_slippage() {
+        let params = SwapParams::with_slippage(1_000_000, 1_000_000, 10_000); // 100%
+        assert_eq!(params.minimum_out_amount, 0);
+    }
+
+    #[test]
+    fn test_swap_params_large_amounts() {
+        // 1000 SOL → expected 100000 USDC (6 decimals)
+        let params = SwapParams::with_slippage(
+            1_000_000_000_000,
+            100_000_000_000,
+            50,
+        );
+        // 100_000_000_000 * 9950 / 10000 = 99_500_000_000
+        assert_eq!(params.minimum_out_amount, 99_500_000_000);
+    }
+
+    #[test]
+    fn test_swap_params_1_lamport() {
+        let params = SwapParams::with_slippage(1, 1, 50);
+        // 1 * 9950 / 10000 = 0 (integer math)
+        assert_eq!(params.minimum_out_amount, 0);
+    }
+
     // ─── Jupiter ─────────────────────────────────────────────────
 
     #[test]
     fn test_jupiter_shared_accounts_route() {
         let params = SwapParams::new(1_000_000_000, 50_000_000, 50);
         let ix = jupiter::shared_accounts_route(
-            &PAYER,
-            &SRC_TOKEN,
-            &DST_TOKEN,
-            &SRC_MINT,
-            &DST_MINT,
-            &params,
-            &[],
+            &PAYER, &SRC_TOKEN, &DST_TOKEN, &SRC_MINT, &DST_MINT,
+            &params, &[],
         );
         assert_eq!(ix.program_id, jupiter::PROGRAM_ID);
-        assert_eq!(ix.accounts.len(), 6); // token program + payer + src + dst + src_mint + dst_mint
-        // Data starts with 8-byte discriminator
-        assert_eq!(ix.data.len(), 8 + 1 + 8 + 8 + 2 + 1); // disc + id + amounts + slippage + fee
+        assert_eq!(ix.accounts.len(), 6);
+        assert_eq!(ix.data.len(), 8 + 1 + 8 + 8 + 2 + 1);
+    }
+
+    #[test]
+    fn test_jupiter_shared_accounts_route_discriminator() {
+        let params = SwapParams::new(100, 50, 10);
+        let ix = jupiter::shared_accounts_route(
+            &PAYER, &SRC_TOKEN, &DST_TOKEN, &SRC_MINT, &DST_MINT,
+            &params, &[],
+        );
+        assert_eq!(&ix.data[0..8], &[193, 32, 155, 51, 65, 214, 156, 129]);
+    }
+
+    #[test]
+    fn test_jupiter_shared_accounts_route_data_encoding() {
+        let params = SwapParams::new(1_000_000_000, 50_000_000, 50);
+        let ix = jupiter::shared_accounts_route(
+            &PAYER, &SRC_TOKEN, &DST_TOKEN, &SRC_MINT, &DST_MINT,
+            &params, &[],
+        );
+        // [8]: route plan id
+        assert_eq!(ix.data[8], 0);
+        // [9..17]: in_amount
+        let in_amt = u64::from_le_bytes(ix.data[9..17].try_into().unwrap());
+        assert_eq!(in_amt, 1_000_000_000);
+        // [17..25]: minimum_out_amount
+        let min_out = u64::from_le_bytes(ix.data[17..25].try_into().unwrap());
+        assert_eq!(min_out, 50_000_000);
+        // [25..27]: slippage_bps
+        let slippage = u16::from_le_bytes(ix.data[25..27].try_into().unwrap());
+        assert_eq!(slippage, 50);
+        // [27]: platform_fee_bps
+        assert_eq!(ix.data[27], 0);
     }
 
     #[test]
@@ -395,9 +450,22 @@ mod tests {
         let params = SwapParams::new(1_000_000, 500_000, 100);
         let extra = vec![AccountMeta::new([0xAA; 32], false)];
         let ix = jupiter::shared_accounts_route(
-            &PAYER, &SRC_TOKEN, &DST_TOKEN, &SRC_MINT, &DST_MINT, &params, &extra,
+            &PAYER, &SRC_TOKEN, &DST_TOKEN, &SRC_MINT, &DST_MINT,
+            &params, &extra,
         );
-        assert_eq!(ix.accounts.len(), 7); // 6 fixed + 1 route
+        assert_eq!(ix.accounts.len(), 7);
+    }
+
+    #[test]
+    fn test_jupiter_shared_accounts_route_payer_is_signer() {
+        let params = SwapParams::new(100, 50, 10);
+        let ix = jupiter::shared_accounts_route(
+            &PAYER, &SRC_TOKEN, &DST_TOKEN, &SRC_MINT, &DST_MINT,
+            &params, &[],
+        );
+        // accounts[1] is the payer
+        assert!(ix.accounts[1].is_signer);
+        assert_eq!(ix.accounts[1].pubkey, PAYER);
     }
 
     #[test]
@@ -409,10 +477,16 @@ mod tests {
     }
 
     #[test]
+    fn test_jupiter_route_discriminator() {
+        let params = SwapParams::new(100, 50, 10);
+        let ix = jupiter::route(&PAYER, &SRC_TOKEN, &DST_TOKEN, &params, &[]);
+        assert_eq!(&ix.data[0..8], &[229, 23, 203, 151, 122, 227, 173, 42]);
+    }
+
+    #[test]
     fn test_jupiter_route_data_encoding() {
         let params = SwapParams::new(1_000_000, 500_000, 50);
         let ix = jupiter::route(&PAYER, &SRC_TOKEN, &DST_TOKEN, &params, &[]);
-        // Verify amounts are encoded correctly
         let in_amount = u64::from_le_bytes(ix.data[8..16].try_into().unwrap());
         let min_out = u64::from_le_bytes(ix.data[16..24].try_into().unwrap());
         let slippage = u16::from_le_bytes(ix.data[24..26].try_into().unwrap());
@@ -421,62 +495,69 @@ mod tests {
         assert_eq!(slippage, 50);
     }
 
+    #[test]
+    fn test_jupiter_route_payer_is_signer() {
+        let params = SwapParams::new(100, 50, 10);
+        let ix = jupiter::route(&PAYER, &SRC_TOKEN, &DST_TOKEN, &params, &[]);
+        assert!(ix.accounts[1].is_signer);
+    }
+
+    #[test]
+    fn test_jupiter_route_with_extra_accounts() {
+        let params = SwapParams::new(100, 50, 10);
+        let extras = vec![
+            AccountMeta::new([0xAA; 32], false),
+            AccountMeta::new([0xBB; 32], false),
+        ];
+        let ix = jupiter::route(&PAYER, &SRC_TOKEN, &DST_TOKEN, &params, &extras);
+        assert_eq!(ix.accounts.len(), 6); // 4 fixed + 2 extras
+    }
+
     // ─── Raydium ─────────────────────────────────────────────────
 
     #[test]
     fn test_raydium_swap() {
         let params = SwapParams::new(1_000_000, 500_000, 50);
-        let accounts: Vec<[u8; 32]> = (0..14).map(|i| [i + 10u8; 32]).collect();
+        let accounts = dummy_raydium_accounts();
         let ix = raydium::swap(
-            &accounts[0],
-            &accounts[1],
-            &accounts[2],
-            &accounts[3],
-            &accounts[4],
-            &accounts[5],
-            &accounts[6],
-            &accounts[7],
-            &accounts[8],
-            &accounts[9],
-            &accounts[10],
-            &accounts[11],
-            &accounts[12],
-            &accounts[13],
-            &SRC_TOKEN,
-            &DST_TOKEN,
-            &PAYER,
-            &params,
+            &accounts[0], &accounts[1], &accounts[2], &accounts[3],
+            &accounts[4], &accounts[5], &accounts[6], &accounts[7],
+            &accounts[8], &accounts[9], &accounts[10], &accounts[11],
+            &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
+            &PAYER, &params,
         );
         assert_eq!(ix.program_id, raydium::PROGRAM_ID);
         assert_eq!(ix.accounts.len(), 18);
         assert_eq!(ix.data[0], 9); // SwapBaseIn discriminator
+    }
+
+    #[test]
+    fn test_raydium_swap_data_encoding() {
+        let params = SwapParams::new(5_000_000, 2_500_000, 100);
+        let accounts = dummy_raydium_accounts();
+        let ix = raydium::swap(
+            &accounts[0], &accounts[1], &accounts[2], &accounts[3],
+            &accounts[4], &accounts[5], &accounts[6], &accounts[7],
+            &accounts[8], &accounts[9], &accounts[10], &accounts[11],
+            &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
+            &PAYER, &params,
+        );
         let in_amt = u64::from_le_bytes(ix.data[1..9].try_into().unwrap());
-        assert_eq!(in_amt, 1_000_000);
+        let min_out = u64::from_le_bytes(ix.data[9..17].try_into().unwrap());
+        assert_eq!(in_amt, 5_000_000);
+        assert_eq!(min_out, 2_500_000);
+        assert_eq!(ix.data.len(), 1 + 8 + 8); // discriminator + 2 x u64
     }
 
     #[test]
     fn test_raydium_swap_base_out() {
-        let accounts: Vec<[u8; 32]> = (0..14).map(|i| [i + 10u8; 32]).collect();
+        let accounts = dummy_raydium_accounts();
         let ix = raydium::swap_base_out(
-            &accounts[0],
-            &accounts[1],
-            &accounts[2],
-            &accounts[3],
-            &accounts[4],
-            &accounts[5],
-            &accounts[6],
-            &accounts[7],
-            &accounts[8],
-            &accounts[9],
-            &accounts[10],
-            &accounts[11],
-            &accounts[12],
-            &accounts[13],
-            &SRC_TOKEN,
-            &DST_TOKEN,
-            &PAYER,
-            2_000_000,
-            1_000_000,
+            &accounts[0], &accounts[1], &accounts[2], &accounts[3],
+            &accounts[4], &accounts[5], &accounts[6], &accounts[7],
+            &accounts[8], &accounts[9], &accounts[10], &accounts[11],
+            &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
+            &PAYER, 2_000_000, 1_000_000,
         );
         assert_eq!(ix.data[0], 11); // SwapBaseOut
         let max_in = u64::from_le_bytes(ix.data[1..9].try_into().unwrap());
@@ -486,9 +567,25 @@ mod tests {
     }
 
     #[test]
+    fn test_raydium_swap_base_out_accounts() {
+        let accounts = dummy_raydium_accounts();
+        let ix = raydium::swap_base_out(
+            &accounts[0], &accounts[1], &accounts[2], &accounts[3],
+            &accounts[4], &accounts[5], &accounts[6], &accounts[7],
+            &accounts[8], &accounts[9], &accounts[10], &accounts[11],
+            &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
+            &PAYER, 100, 50,
+        );
+        assert_eq!(ix.accounts.len(), 18);
+        // Last account is user_owner (signer)
+        assert!(ix.accounts[17].is_signer);
+        assert_eq!(ix.accounts[17].pubkey, PAYER);
+    }
+
+    #[test]
     fn test_raydium_swap_payer_is_signer() {
         let params = SwapParams::new(100, 50, 10);
-        let accounts: Vec<[u8; 32]> = (0..14).map(|i| [i + 10u8; 32]).collect();
+        let accounts = dummy_raydium_accounts();
         let ix = raydium::swap(
             &accounts[0], &accounts[1], &accounts[2], &accounts[3],
             &accounts[4], &accounts[5], &accounts[6], &accounts[7],
@@ -496,8 +593,48 @@ mod tests {
             &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
             &PAYER, &params,
         );
-        // Last account (user_owner) should be a signer
         let last = &ix.accounts[ix.accounts.len() - 1];
         assert!(last.is_signer);
+    }
+
+    #[test]
+    fn test_raydium_swap_discriminators_differ() {
+        // SwapBaseIn = 9, SwapBaseOut = 11
+        let params = SwapParams::new(100, 50, 10);
+        let accounts = dummy_raydium_accounts();
+        let ix_in = raydium::swap(
+            &accounts[0], &accounts[1], &accounts[2], &accounts[3],
+            &accounts[4], &accounts[5], &accounts[6], &accounts[7],
+            &accounts[8], &accounts[9], &accounts[10], &accounts[11],
+            &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
+            &PAYER, &params,
+        );
+        let ix_out = raydium::swap_base_out(
+            &accounts[0], &accounts[1], &accounts[2], &accounts[3],
+            &accounts[4], &accounts[5], &accounts[6], &accounts[7],
+            &accounts[8], &accounts[9], &accounts[10], &accounts[11],
+            &accounts[12], &accounts[13], &SRC_TOKEN, &DST_TOKEN,
+            &PAYER, 100, 50,
+        );
+        assert_ne!(ix_in.data[0], ix_out.data[0]);
+        assert_eq!(ix_in.data[0], 9);
+        assert_eq!(ix_out.data[0], 11);
+    }
+
+    // ─── Program IDs ─────────────────────────────────────────────
+
+    #[test]
+    fn test_jupiter_program_id_length() {
+        assert_eq!(jupiter::PROGRAM_ID.len(), 32);
+    }
+
+    #[test]
+    fn test_raydium_program_id_length() {
+        assert_eq!(raydium::PROGRAM_ID.len(), 32);
+    }
+
+    #[test]
+    fn test_program_ids_differ() {
+        assert_ne!(jupiter::PROGRAM_ID, raydium::PROGRAM_ID);
     }
 }

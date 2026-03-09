@@ -407,13 +407,27 @@ mod tests {
     #[test]
     fn test_anchor_script_structure() {
         let script = anchor_script(&PK1);
-        // Should contain OP_CHECKSIG, OP_IFDUP, OP_NOTIF, OP_16, OP_CSV, OP_ENDIF
         assert!(script.contains(&0xAC)); // OP_CHECKSIG
         assert!(script.contains(&0x73)); // OP_IFDUP
         assert!(script.contains(&0x64)); // OP_NOTIF
         assert!(script.contains(&0x60)); // OP_16
         assert!(script.contains(&0xB2)); // OP_CSV
         assert!(script.contains(&0x68)); // OP_ENDIF
+    }
+
+    #[test]
+    fn test_anchor_script_byte_level() {
+        let script = anchor_script(&PK1);
+        // Exact byte sequence: PUSH33 <pk> OP_CHECKSIG OP_IFDUP OP_NOTIF OP_16 OP_CSV OP_ENDIF
+        assert_eq!(script[0], 33);                 // push length
+        assert_eq!(&script[1..34], &PK1[..]);      // pubkey
+        assert_eq!(script[34], 0xAC);              // OP_CHECKSIG
+        assert_eq!(script[35], 0x73);              // OP_IFDUP
+        assert_eq!(script[36], 0x64);              // OP_NOTIF
+        assert_eq!(script[37], 0x60);              // OP_16
+        assert_eq!(script[38], 0xB2);              // OP_CSV
+        assert_eq!(script[39], 0x68);              // OP_ENDIF
+        assert_eq!(script.len(), 40);
     }
 
     #[test]
@@ -427,6 +441,11 @@ mod tests {
         let s1 = anchor_script(&PK1);
         let s2 = anchor_script(&PK2);
         assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_anchor_script_deterministic() {
+        assert_eq!(anchor_script(&PK1), anchor_script(&PK1));
     }
 
     #[test]
@@ -448,6 +467,32 @@ mod tests {
     }
 
     #[test]
+    fn test_to_local_script_byte_level() {
+        let script = to_local_script(&PK1, 144, &PK2);
+        // OP_IF
+        assert_eq!(script[0], 0x63);
+        // PUSH33 <revocation_key>
+        assert_eq!(script[1], 33);
+        assert_eq!(&script[2..35], &PK1[..]);
+        // OP_ELSE
+        assert_eq!(script[35], 0x67);
+        // CSV delay encoding for 144 (=0x90, needs sign byte: 02 90 00)
+        assert_eq!(script[36], 2);     // 2 bytes
+        assert_eq!(script[37], 0x90);
+        assert_eq!(script[38], 0x00);  // sign extension
+        // OP_CSV OP_DROP
+        assert_eq!(script[39], 0xB2);
+        assert_eq!(script[40], 0x75);
+        // PUSH33 <local_delayed_key>
+        assert_eq!(script[41], 33);
+        assert_eq!(&script[42..75], &PK2[..]);
+        // OP_ENDIF OP_CHECKSIG
+        assert_eq!(script[75], 0x68);
+        assert_eq!(script[76], 0xAC);
+        assert_eq!(script.len(), 77);
+    }
+
+    #[test]
     fn test_to_local_contains_both_keys() {
         let script = to_local_script(&PK1, 144, &PK2);
         assert!(script.windows(33).any(|w| w == PK1));
@@ -464,8 +509,20 @@ mod tests {
     #[test]
     fn test_to_local_small_delay() {
         let script = to_local_script(&PK1, 1, &PK2);
-        // OP_1 = 0x51, should use minimal encoding
-        assert!(script.contains(&0x51));
+        assert!(script.contains(&0x51)); // OP_1
+    }
+
+    #[test]
+    fn test_to_local_delay_16() {
+        let script = to_local_script(&PK1, 16, &PK2);
+        assert!(script.contains(&0x60)); // OP_16
+    }
+
+    #[test]
+    fn test_to_local_swapped_keys_differ() {
+        let s1 = to_local_script(&PK1, 144, &PK2);
+        let s2 = to_local_script(&PK2, 144, &PK1);
+        assert_ne!(s1, s2);
     }
 
     // ─── To Remote Script ────────────────────────────────────────
@@ -479,6 +536,18 @@ mod tests {
     }
 
     #[test]
+    fn test_to_remote_anchor_byte_level() {
+        let script = to_remote_script(&PK1, true);
+        // PUSH33 <pk> OP_CHECKSIGVERIFY OP_1 OP_CSV
+        assert_eq!(script[0], 33);
+        assert_eq!(&script[1..34], &PK1[..]);
+        assert_eq!(script[34], 0xAD); // OP_CHECKSIGVERIFY
+        assert_eq!(script[35], 0x51); // OP_1
+        assert_eq!(script[36], 0xB2); // OP_CSV
+        assert_eq!(script.len(), 37);
+    }
+
+    #[test]
     fn test_to_remote_non_anchor_is_p2pkh_like() {
         let script = to_remote_script(&PK1, false);
         assert!(script.contains(&0x76)); // OP_DUP
@@ -488,10 +557,30 @@ mod tests {
     }
 
     #[test]
+    fn test_to_remote_non_anchor_byte_level() {
+        let script = to_remote_script(&PK1, false);
+        // OP_DUP OP_HASH160 PUSH20 <hash> OP_EQUALVERIFY OP_CHECKSIG
+        assert_eq!(script[0], 0x76);
+        assert_eq!(script[1], 0xA9);
+        assert_eq!(script[2], 0x14); // push 20 bytes
+        // 20 bytes of hash160
+        assert_eq!(script[23], 0x88);
+        assert_eq!(script[24], 0xAC);
+        assert_eq!(script.len(), 25);
+    }
+
+    #[test]
     fn test_to_remote_anchor_vs_non_anchor_differ() {
         let s1 = to_remote_script(&PK1, true);
         let s2 = to_remote_script(&PK1, false);
         assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_to_remote_non_anchor_deterministic_hash() {
+        let s1 = to_remote_script(&PK1, false);
+        let s2 = to_remote_script(&PK1, false);
+        assert_eq!(s1, s2);
     }
 
     // ─── Offered HTLC ────────────────────────────────────────────
@@ -524,6 +613,31 @@ mod tests {
         assert_ne!(s1, s2);
     }
 
+    #[test]
+    fn test_offered_htlc_contains_both_htlc_keys() {
+        let hash = [0xAA; 20];
+        let script = offered_htlc_script(&PK1, &PK2, &PK3, &hash);
+        assert!(script.windows(33).any(|w| w == PK2)); // remote htlc key
+        assert!(script.windows(33).any(|w| w == PK3)); // local htlc key
+    }
+
+    #[test]
+    fn test_offered_htlc_has_2_of_2_multisig() {
+        let hash = [0xAA; 20];
+        let script = offered_htlc_script(&PK1, &PK2, &PK3, &hash);
+        // Should contain OP_2 ... OP_2 OP_CHECKMULTISIG
+        assert!(script.contains(&0x52)); // OP_2
+        assert!(script.contains(&0xAE)); // OP_CHECKMULTISIG
+    }
+
+    #[test]
+    fn test_offered_htlc_deterministic() {
+        let hash = [0xAA; 20];
+        let s1 = offered_htlc_script(&PK1, &PK2, &PK3, &hash);
+        let s2 = offered_htlc_script(&PK1, &PK2, &PK3, &hash);
+        assert_eq!(s1, s2);
+    }
+
     // ─── Received HTLC ───────────────────────────────────────────
 
     #[test]
@@ -552,20 +666,57 @@ mod tests {
         assert!(script.windows(33).any(|w| w == PK3));
     }
 
+    #[test]
+    fn test_received_htlc_has_cltv_and_multisig() {
+        let hash = [0xAA; 20];
+        let script = received_htlc_script(&PK1, &PK2, &PK3, &hash, 500_000);
+        assert!(script.contains(&0xB1)); // OP_CHECKLOCKTIMEVERIFY
+        assert!(script.contains(&0x52)); // OP_2
+        assert!(script.contains(&0xAE)); // OP_CHECKMULTISIG
+    }
+
+    #[test]
+    fn test_received_htlc_small_timeout() {
+        let hash = [0xAA; 20];
+        let script = received_htlc_script(&PK1, &PK2, &PK3, &hash, 5);
+        // timeout=5 → OP_5 (0x55)
+        assert!(script.contains(&0x55));
+    }
+
+    #[test]
+    fn test_received_htlc_deterministic() {
+        let hash = [0xAA; 20];
+        let s1 = received_htlc_script(&PK1, &PK2, &PK3, &hash, 800_000);
+        let s2 = received_htlc_script(&PK1, &PK2, &PK3, &hash, 800_000);
+        assert_eq!(s1, s2);
+    }
+
     // ─── Funding Script ──────────────────────────────────────────
 
     #[test]
     fn test_funding_script_2_of_2() {
         let script = funding_script(&PK1, &PK2);
-        assert_eq!(script[0], 0x52); // OP_2
-        assert_eq!(script[script.len() - 2], 0x52); // OP_2
-        assert_eq!(script[script.len() - 1], 0xAE); // OP_CHECKMULTISIG
-        assert_eq!(script.len(), 3 + 2 * 34); // OP_2 + 2*(push+key) + OP_2 + OP_CMS
+        assert_eq!(script[0], 0x52);
+        assert_eq!(script[script.len() - 2], 0x52);
+        assert_eq!(script[script.len() - 1], 0xAE);
+        assert_eq!(script.len(), 3 + 2 * 34);
+    }
+
+    #[test]
+    fn test_funding_script_byte_level() {
+        let script = funding_script(&PK1, &PK2);
+        // PK1 < PK2 lexicographically (0x02 < 0x03)
+        assert_eq!(script[0], 0x52);              // OP_2
+        assert_eq!(script[1], 33);                 // push length
+        assert_eq!(&script[2..35], &PK1[..]);      // first key (smaller)
+        assert_eq!(script[35], 33);
+        assert_eq!(&script[36..69], &PK2[..]);     // second key (larger)
+        assert_eq!(script[69], 0x52);              // OP_2
+        assert_eq!(script[70], 0xAE);              // OP_CHECKMULTISIG
     }
 
     #[test]
     fn test_funding_script_lexicographic_order() {
-        // Same result regardless of input order
         let s1 = funding_script(&PK1, &PK2);
         let s2 = funding_script(&PK2, &PK1);
         assert_eq!(s1, s2);
@@ -574,9 +725,19 @@ mod tests {
     #[test]
     fn test_funding_script_same_key_both_slots() {
         let script = funding_script(&PK1, &PK1);
-        // Should work - both keys in the script
         assert_eq!(script[0], 0x52);
         assert_eq!(script.len(), 3 + 2 * 34);
+    }
+
+    #[test]
+    fn test_funding_script_key_order_verified() {
+        // pk_a = 0x02..00, pk_b = 0x02..FF → pk_a < pk_b
+        let pk_a = PK1;
+        let pk_b = PK3; // 0x02...FF
+        let script = funding_script(&pk_b, &pk_a);
+        // pk_a should come first
+        assert_eq!(&script[2..35], &pk_a[..]);
+        assert_eq!(&script[36..69], &pk_b[..]);
     }
 
     // ─── CSV Delay Encoding ──────────────────────────────────────
@@ -596,13 +757,92 @@ mod tests {
     }
 
     #[test]
+    fn test_csv_delay_17() {
+        // 17 is past OP_16 range → needs explicit push
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 17);
+        assert_eq!(s[0], 1); // 1 byte
+        assert_eq!(s[1], 17);
+    }
+
+    #[test]
+    fn test_csv_delay_127() {
+        // 127 = 0x7F, fits in 1 byte (no sign bit issue)
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 127);
+        assert_eq!(s[0], 1);
+        assert_eq!(s[1], 0x7F);
+    }
+
+    #[test]
+    fn test_csv_delay_128() {
+        // 128 = 0x80, high bit set → needs 2 bytes
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 128);
+        assert_eq!(s[0], 2);
+        assert_eq!(s[1], 0x80);
+        assert_eq!(s[2], 0x00);
+    }
+
+    #[test]
     fn test_csv_delay_144() {
         let mut s = Vec::new();
         push_csv_delay(&mut s, 144);
-        // 144 = 0x90 in LE, needs 2 bytes (sign bit)
         assert_eq!(s[0], 2);
         assert_eq!(s[1], 0x90);
         assert_eq!(s[2], 0x00);
+    }
+
+    #[test]
+    fn test_csv_delay_255() {
+        // 255 = 0xFF, high bit set → 2 bytes
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 255);
+        assert_eq!(s[0], 2);
+        assert_eq!(s[1], 0xFF);
+        assert_eq!(s[2], 0x00);
+    }
+
+    #[test]
+    fn test_csv_delay_256() {
+        // 256 = 0x0100 LE, no sign issue
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 256);
+        assert_eq!(s[0], 2);
+        assert_eq!(s[1], 0x00);
+        assert_eq!(s[2], 0x01);
+    }
+
+    #[test]
+    fn test_csv_delay_32767() {
+        // 0x7FFF — max 2-byte positive
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 32767);
+        assert_eq!(s[0], 2);
+        assert_eq!(s[1], 0xFF);
+        assert_eq!(s[2], 0x7F);
+    }
+
+    #[test]
+    fn test_csv_delay_32768() {
+        // 0x8000 — needs 3 bytes (sign extension)
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 32768);
+        assert_eq!(s[0], 3);
+        assert_eq!(s[1], 0x00);
+        assert_eq!(s[2], 0x80);
+        assert_eq!(s[3], 0x00);
+    }
+
+    #[test]
+    fn test_csv_delay_65535() {
+        // Max u16 = 0xFFFF, high bit set → 3 bytes
+        let mut s = Vec::new();
+        push_csv_delay(&mut s, 65535);
+        assert_eq!(s[0], 3);
+        assert_eq!(s[1], 0xFF);
+        assert_eq!(s[2], 0xFF);
+        assert_eq!(s[3], 0x00);
     }
 
     // ─── CLTV Timeout Encoding ───────────────────────────────────
@@ -615,14 +855,50 @@ mod tests {
     }
 
     #[test]
+    fn test_cltv_timeout_17() {
+        let mut s = Vec::new();
+        push_cltv_timeout(&mut s, 17);
+        assert_eq!(s[0], 1);
+        assert_eq!(s[1], 17);
+    }
+
+    #[test]
+    fn test_cltv_timeout_128() {
+        // 128 = 0x80, high bit → needs sign extension
+        let mut s = Vec::new();
+        push_cltv_timeout(&mut s, 128);
+        assert_eq!(s[0], 2);
+        assert_eq!(s[1], 0x80);
+        assert_eq!(s[2], 0x00);
+    }
+
+    #[test]
     fn test_cltv_timeout_large() {
         let mut s = Vec::new();
         push_cltv_timeout(&mut s, 500_000);
-        // 500_000 = 0x07A120 in LE: [0x20, 0xA1, 0x07]
-        assert_eq!(s[0], 3); // length
+        assert_eq!(s[0], 3);
         assert_eq!(s[1], 0x20);
         assert_eq!(s[2], 0xA1);
         assert_eq!(s[3], 0x07);
+    }
+
+    #[test]
+    fn test_cltv_timeout_block_height() {
+        // Typical block height: 800_000 = 0x0C3500
+        let mut s = Vec::new();
+        push_cltv_timeout(&mut s, 800_000);
+        let val = 800_000u32.to_le_bytes();
+        assert_eq!(s[1], val[0]); // 0x00
+        assert_eq!(s[2], val[1]); // 0x35
+        assert_eq!(s[3], val[2]); // 0x0C
+    }
+
+    #[test]
+    fn test_cltv_timeout_max_u32() {
+        let mut s = Vec::new();
+        push_cltv_timeout(&mut s, u32::MAX);
+        // 0xFFFFFFFF all sign bits set → needs 5 bytes
+        assert_eq!(s[0], 5);
     }
 
     // ─── Default Constants ───────────────────────────────────────
@@ -630,5 +906,54 @@ mod tests {
     #[test]
     fn test_default_delay() {
         assert_eq!(DEFAULT_TO_SELF_DELAY, 144);
+    }
+
+    // ─── E2E Commitment Flow ─────────────────────────────────────
+
+    #[test]
+    fn test_e2e_commitment_scripts() {
+        let local_pk = PK1;
+        let remote_pk = PK2;
+        let revocation_pk = PK3;
+        let delay = DEFAULT_TO_SELF_DELAY;
+
+        // Build all scripts for a commitment transaction
+        let to_local = to_local_script(&revocation_pk, delay, &local_pk);
+        let to_remote_anchor = to_remote_script(&remote_pk, true);
+        let to_remote_non_anchor = to_remote_script(&remote_pk, false);
+        let anchor_local = anchor_script(&local_pk);
+        let anchor_remote = anchor_script(&remote_pk);
+        let funding = funding_script(&local_pk, &remote_pk);
+
+        // All scripts are non-empty
+        assert!(!to_local.is_empty());
+        assert!(!to_remote_anchor.is_empty());
+        assert!(!to_remote_non_anchor.is_empty());
+        assert!(!anchor_local.is_empty());
+        assert!(!anchor_remote.is_empty());
+        assert!(!funding.is_empty());
+
+        // All different
+        assert_ne!(to_local, to_remote_anchor);
+        assert_ne!(anchor_local, anchor_remote);
+        assert_ne!(to_remote_anchor, to_remote_non_anchor);
+    }
+
+    #[test]
+    fn test_e2e_htlc_pair() {
+        let payment_hash = [0xAA; 20];
+        let timeout = 500_000u32;
+
+        let offered = offered_htlc_script(&PK1, &PK2, &PK3, &payment_hash);
+        let received = received_htlc_script(&PK1, &PK2, &PK3, &payment_hash, timeout);
+
+        // Both contain the payment hash
+        assert!(offered.windows(20).any(|w| w == payment_hash));
+        assert!(received.windows(20).any(|w| w == payment_hash));
+
+        // Different scripts (offered vs received have structural differences)
+        assert_ne!(offered, received);
+        // Received is longer (has CLTV timeout)
+        assert!(received.len() > offered.len());
     }
 }

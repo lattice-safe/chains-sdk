@@ -379,13 +379,30 @@ mod tests {
             .collect()
     }
 
+    // Real secp256k1 compressed public keys (from BIP-11 / Bitcoin Core test vectors)
+    fn real_pubkeys() -> Vec<[u8; 33]> {
+        let hex_keys = [
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", // G point
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5", // 2G
+            "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",  // 3G
+        ];
+        hex_keys
+            .iter()
+            .map(|h| {
+                let bytes = hex::decode(h).unwrap();
+                let mut key = [0u8; 33];
+                key.copy_from_slice(&bytes);
+                key
+            })
+            .collect()
+    }
+
     // ─── Redeem Script Construction ──────────────────────────────
 
     #[test]
     fn test_multisig_2_of_3() {
         let keys = dummy_keys(3);
         let script = multisig_redeem_script(2, &keys).unwrap();
-        // OP_2 <pk1> <pk2> <pk3> OP_3 OP_CHECKMULTISIG
         assert_eq!(script[0], 0x52); // OP_2
         assert_eq!(script[script.len() - 2], 0x53); // OP_3
         assert_eq!(script[script.len() - 1], 0xAE); // OP_CHECKMULTISIG
@@ -396,16 +413,16 @@ mod tests {
     fn test_multisig_1_of_1() {
         let keys = dummy_keys(1);
         let script = multisig_redeem_script(1, &keys).unwrap();
-        assert_eq!(script[0], 0x51); // OP_1
-        assert_eq!(script[script.len() - 2], 0x51); // OP_1
+        assert_eq!(script[0], 0x51);
+        assert_eq!(script[script.len() - 2], 0x51);
     }
 
     #[test]
     fn test_multisig_15_of_15() {
         let keys = dummy_keys(15);
         let script = multisig_redeem_script(15, &keys).unwrap();
-        assert_eq!(script[0], 0x5F); // OP_15
-        assert_eq!(script[script.len() - 2], 0x5F); // OP_15
+        assert_eq!(script[0], 0x5F);
+        assert_eq!(script[script.len() - 2], 0x5F);
     }
 
     #[test]
@@ -440,6 +457,107 @@ mod tests {
         }
     }
 
+    // ─── Test Vector: Real Secp256k1 Keys ────────────────────────
+
+    #[test]
+    fn test_real_pubkey_2_of_3_redeem_script() {
+        let keys = real_pubkeys();
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        // Byte-level verification: OP_2 <33> <pk1> <33> <pk2> <33> <pk3> OP_3 OP_CHECKMULTISIG
+        assert_eq!(script[0], 0x52); // OP_2
+        assert_eq!(script[1], 33);   // push length
+        assert_eq!(&script[2..35], &keys[0]);
+        assert_eq!(script[35], 33);
+        assert_eq!(&script[36..69], &keys[1]);
+        assert_eq!(script[69], 33);
+        assert_eq!(&script[70..103], &keys[2]);
+        assert_eq!(script[103], 0x53); // OP_3
+        assert_eq!(script[104], 0xAE); // OP_CHECKMULTISIG
+        assert_eq!(script.len(), 105);
+    }
+
+    #[test]
+    fn test_real_pubkey_p2sh_address_stable() {
+        let keys = real_pubkeys();
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let addr = p2sh_address(&script, false);
+        // Same keys always produce the same P2SH address
+        let addr2 = p2sh_address(&script, false);
+        assert_eq!(addr, addr2);
+        assert!(addr.starts_with('3'));
+        // P2SH addresses are 34 chars (base58check of 1+20+4 bytes)
+        assert_eq!(addr.len(), 34);
+    }
+
+    #[test]
+    fn test_real_pubkey_p2wsh_address_length() {
+        let keys = real_pubkeys();
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let addr = p2wsh_address(&script, false).unwrap();
+        // Bech32 P2WSH addresses: bc1q + 58 chars = 62 total
+        assert!(addr.starts_with("bc1q"));
+        assert_eq!(addr.len(), 62);
+    }
+
+    #[test]
+    fn test_real_pubkey_decode_roundtrip() {
+        let keys = real_pubkeys();
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let (m, n) = decode_multisig_script(&script).unwrap();
+        assert_eq!(m, 2);
+        assert_eq!(n, 3);
+        let extracted = extract_pubkeys(&script).unwrap();
+        assert_eq!(extracted, keys);
+    }
+
+    // ─── Exhaustive m-of-n Combinations ──────────────────────────
+
+    #[test]
+    fn test_all_valid_thresholds_1_to_15() {
+        for n in 1..=15usize {
+            let keys = dummy_keys(n);
+            for m in 1..=n {
+                let script = multisig_redeem_script(m, &keys).unwrap();
+                assert_eq!(script[0], 0x50 + m as u8, "OP_m for {m}-of-{n}");
+                assert_eq!(script[script.len() - 2], 0x50 + n as u8, "OP_n for {m}-of-{n}");
+                assert_eq!(script[script.len() - 1], 0xAE, "OP_CMS for {m}-of-{n}");
+                assert_eq!(script.len(), 3 + n * 34, "length for {m}-of-{n}");
+
+                // Roundtrip decode
+                let (dm, dn) = decode_multisig_script(&script).unwrap();
+                assert_eq!(dm, m, "decoded m for {m}-of-{n}");
+                assert_eq!(dn, n, "decoded n for {m}-of-{n}");
+
+                // Extract keys roundtrip
+                let extracted = extract_pubkeys(&script).unwrap();
+                assert_eq!(extracted.len(), n);
+                assert_eq!(extracted, keys, "keys roundtrip for {m}-of-{n}");
+            }
+        }
+    }
+
+    // ─── SHA256 Known Test Vector ────────────────────────────────
+
+    #[test]
+    fn test_witness_script_hash_known_vector() {
+        // SHA256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        let hash = witness_script_hash(b"");
+        assert_eq!(
+            hex::encode(hash),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn test_witness_script_hash_abc() {
+        // SHA256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+        let hash = witness_script_hash(b"abc");
+        assert_eq!(
+            hex::encode(hash),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
     // ─── Script Hashing ──────────────────────────────────────────
 
     #[test]
@@ -459,8 +577,17 @@ mod tests {
         let data = b"test";
         let h160 = script_hash160(data);
         let wsh = witness_script_hash(data);
-        // Different lengths, different algorithms
         assert_ne!(&h160[..], &wsh[..20]);
+    }
+
+    #[test]
+    fn test_hash160_empty_input() {
+        // HASH160("") is deterministic — known value
+        let h = script_hash160(b"");
+        assert_eq!(h.len(), 20);
+        // Verify it matches RIPEMD160(SHA256(""))
+        let expected = "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb";
+        assert_eq!(hex::encode(h), expected);
     }
 
     // ─── ScriptPubKey Construction ───────────────────────────────
@@ -470,10 +597,10 @@ mod tests {
         let hash = [0xAA; 20];
         let spk = p2sh_script_pubkey(&hash);
         assert_eq!(spk.len(), 23);
-        assert_eq!(spk[0], 0xA9); // OP_HASH160
-        assert_eq!(spk[1], 0x14); // PUSH 20
+        assert_eq!(spk[0], 0xA9);
+        assert_eq!(spk[1], 0x14);
         assert_eq!(&spk[2..22], &hash);
-        assert_eq!(spk[22], 0x87); // OP_EQUAL
+        assert_eq!(spk[22], 0x87);
     }
 
     #[test]
@@ -481,8 +608,8 @@ mod tests {
         let hash = [0xBB; 32];
         let spk = p2wsh_script_pubkey(&hash);
         assert_eq!(spk.len(), 34);
-        assert_eq!(spk[0], 0x00); // OP_0
-        assert_eq!(spk[1], 0x20); // PUSH 32
+        assert_eq!(spk[0], 0x00);
+        assert_eq!(spk[1], 0x20);
         assert_eq!(&spk[2..34], &hash);
     }
 
@@ -491,6 +618,24 @@ mod tests {
         let wsh = [0xCC; 32];
         let spk = p2sh_p2wsh_script_pubkey(&wsh);
         assert!(is_p2sh(&spk));
+    }
+
+    #[test]
+    fn test_p2sh_script_pubkey_hex_encoding() {
+        // Known P2SH script: OP_HASH160 <20 zero bytes> OP_EQUAL
+        let hash = [0u8; 20];
+        let spk = p2sh_script_pubkey(&hash);
+        let expected = "a914000000000000000000000000000000000000000087";
+        assert_eq!(hex::encode(&spk), expected);
+    }
+
+    #[test]
+    fn test_p2wsh_script_pubkey_hex_encoding() {
+        // Known P2WSH script: OP_0 <32 zero bytes>
+        let hash = [0u8; 32];
+        let spk = p2wsh_script_pubkey(&hash);
+        let expected = "00200000000000000000000000000000000000000000000000000000000000000000";
+        assert_eq!(hex::encode(&spk), expected);
     }
 
     // ─── Address Generation ──────────────────────────────────────
@@ -555,6 +700,21 @@ mod tests {
         assert_ne!(a2, a3);
     }
 
+    #[test]
+    fn test_mainnet_vs_testnet_addresses_differ() {
+        let keys = dummy_keys(2);
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        assert_ne!(p2sh_address(&script, false), p2sh_address(&script, true));
+        assert_ne!(
+            p2wsh_address(&script, false).unwrap(),
+            p2wsh_address(&script, true).unwrap()
+        );
+        assert_ne!(
+            p2sh_p2wsh_address(&script, false),
+            p2sh_p2wsh_address(&script, true),
+        );
+    }
+
     // ─── Witness / ScriptSig ─────────────────────────────────────
 
     #[test]
@@ -562,12 +722,27 @@ mod tests {
         let sigs = vec![vec![0x30; 71], vec![0x30; 72]];
         let script = vec![0xAE; 10];
         let witness = multisig_witness(&sigs, &script);
-        // [empty, sig1, sig2, script]
         assert_eq!(witness.len(), 4);
-        assert!(witness[0].is_empty()); // OP_0 dummy
+        assert!(witness[0].is_empty());
         assert_eq!(witness[1], sigs[0]);
         assert_eq!(witness[2], sigs[1]);
         assert_eq!(witness[3], script);
+    }
+
+    #[test]
+    fn test_multisig_witness_single_sig() {
+        let sigs = vec![vec![0x30; 72]];
+        let script = vec![0xAE];
+        let witness = multisig_witness(&sigs, &script);
+        assert_eq!(witness.len(), 3); // empty + 1 sig + script
+    }
+
+    #[test]
+    fn test_multisig_witness_empty_sigs() {
+        let witness = multisig_witness(&[], &[0xAE]);
+        assert_eq!(witness.len(), 2); // empty + script
+        assert!(witness[0].is_empty());
+        assert_eq!(witness[1], vec![0xAE]);
     }
 
     #[test]
@@ -575,21 +750,42 @@ mod tests {
         let sigs = vec![vec![0x30, 0x44], vec![0x30, 0x45]];
         let redeem = vec![0xAE; 10];
         let script_sig = multisig_script_sig(&sigs, &redeem);
-        // First byte should be OP_0
         assert_eq!(script_sig[0], 0x00);
-        // Should contain both sigs and the redeem script
         assert!(script_sig.len() > 3 + sigs[0].len() + sigs[1].len() + redeem.len());
+    }
+
+    #[test]
+    fn test_multisig_script_sig_with_real_script() {
+        let keys = dummy_keys(3);
+        let redeem = multisig_redeem_script(2, &keys).unwrap();
+        // Mock DER sigs (30 44 ... 01 = DER + SIGHASH_ALL)
+        let sig1 = vec![0x30; 72];
+        let sig2 = vec![0x30; 71];
+        let ss = multisig_script_sig(&[sig1.clone(), sig2.clone()], &redeem);
+
+        // OP_0 + push(sig1) + push(sig2) + OP_PUSHDATA1(redeem)
+        assert_eq!(ss[0], 0x00);
+        // sig1 is 72 bytes → push byte 72
+        assert_eq!(ss[1], 72);
+        assert_eq!(&ss[2..74], &sig1[..]);
+        // sig2 is 71 bytes → push byte 71
+        assert_eq!(ss[74], 71);
+        assert_eq!(&ss[75..146], &sig2[..]);
+        // redeem is 105 bytes → OP_PUSHDATA1 (0x4C) then length
+        assert_eq!(ss[146], 0x4C);
+        assert_eq!(ss[147], 105);
     }
 
     #[test]
     fn test_p2sh_p2wsh_script_sig_structure() {
         let wsh = [0xCC; 32];
         let script_sig = p2sh_p2wsh_script_sig(&wsh);
-        // Should be: push(34-byte P2WSH scriptPubKey)
-        // P2WSH = OP_0 + 0x20 + 32 bytes = 34 bytes
-        assert_eq!(script_sig[0], 34); // push 34 bytes
-        assert_eq!(script_sig[1], 0x00); // OP_0
-        assert_eq!(script_sig[2], 0x20); // PUSH 32
+        assert_eq!(script_sig[0], 34);
+        assert_eq!(script_sig[1], 0x00);
+        assert_eq!(script_sig[2], 0x20);
+        assert_eq!(script_sig.len(), 35);
+        // Verify embedded WSH
+        assert_eq!(&script_sig[3..35], &wsh);
     }
 
     // ─── Script Detection ────────────────────────────────────────
@@ -604,12 +800,37 @@ mod tests {
     }
 
     #[test]
+    fn test_is_p2sh_wrong_length() {
+        assert!(!is_p2sh(&[0xA9, 0x14, 0x00])); // too short
+        let mut too_long = vec![0xA9, 0x14];
+        too_long.extend_from_slice(&[0; 20]);
+        too_long.push(0x87);
+        too_long.push(0xFF); // extra byte
+        assert!(!is_p2sh(&too_long));
+    }
+
+    #[test]
+    fn test_is_p2sh_wrong_opcodes() {
+        let mut bad = vec![0x00, 0x14]; // wrong first opcode
+        bad.extend_from_slice(&[0; 20]);
+        bad.push(0x87);
+        assert!(!is_p2sh(&bad));
+    }
+
+    #[test]
     fn test_is_p2wsh() {
         let hash = [0xBB; 32];
         let spk = p2wsh_script_pubkey(&hash);
         assert!(is_p2wsh(&spk));
         assert!(!is_p2wsh(&[0u8; 23]));
         assert!(!is_p2wsh(&[]));
+    }
+
+    #[test]
+    fn test_is_p2wsh_wrong_version() {
+        let mut bad = vec![0x01, 0x20]; // witness version 1, not 0
+        bad.extend_from_slice(&[0; 32]);
+        assert!(!is_p2wsh(&bad));
     }
 
     // ─── Decode Multisig Script ──────────────────────────────────
@@ -636,7 +857,40 @@ mod tests {
     fn test_decode_multisig_invalid() {
         assert!(decode_multisig_script(&[]).is_none());
         assert!(decode_multisig_script(&[0x00, 0x00]).is_none());
-        assert!(decode_multisig_script(&[0x52, 0x53, 0xAB]).is_none()); // wrong opcode
+        assert!(decode_multisig_script(&[0x52, 0x53, 0xAB]).is_none());
+    }
+
+    #[test]
+    fn test_decode_multisig_corrupted_push_byte() {
+        let keys = dummy_keys(2);
+        let mut script = multisig_redeem_script(2, &keys).unwrap();
+        // Corrupt the push byte of the first key
+        script[1] = 32; // should be 33
+        assert!(decode_multisig_script(&script).is_none());
+    }
+
+    #[test]
+    fn test_decode_multisig_wrong_length() {
+        // Script that claims 2-of-3 but has wrong length
+        let mut script = vec![0x52]; // OP_2
+        script.push(33);
+        script.extend_from_slice(&[0x02; 33]);
+        // Only 1 key, so OP_3 + OP_CMS would be wrong
+        script.push(0x53);
+        script.push(0xAE);
+        assert!(decode_multisig_script(&script).is_none());
+    }
+
+    #[test]
+    fn test_decode_m_greater_than_n() {
+        // Manually craft a script with m > n (invalid but well-formed bytes)
+        // OP_3 <key1> OP_2 OP_CHECKMULTISIG — 3 > 2 but only 1 key
+        let mut script = vec![0x53]; // OP_3
+        script.push(33);
+        script.extend_from_slice(&[0x02; 33]);
+        script.push(0x52); // OP_2
+        script.push(0xAE);
+        assert!(decode_multisig_script(&script).is_none());
     }
 
     // ─── Extract Pubkeys ─────────────────────────────────────────
@@ -655,6 +909,16 @@ mod tests {
         assert!(extract_pubkeys(&[]).is_none());
     }
 
+    #[test]
+    fn test_extract_pubkeys_real_keys() {
+        let keys = real_pubkeys();
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let extracted = extract_pubkeys(&script).unwrap();
+        assert_eq!(extracted[0], keys[0]);
+        assert_eq!(extracted[1], keys[1]);
+        assert_eq!(extracted[2], keys[2]);
+    }
+
     // ─── End-to-End Flows ────────────────────────────────────────
 
     #[test]
@@ -664,12 +928,10 @@ mod tests {
         let addr = p2sh_address(&script, false);
         assert!(addr.starts_with('3'));
 
-        // Build scriptSig with 2 dummy signatures
         let sigs = vec![vec![0x30; 71], vec![0x30; 72]];
         let ss = multisig_script_sig(&sigs, &script);
-        assert!(ss.len() > 0);
+        assert!(!ss.is_empty());
 
-        // Decode the script
         let (m, n) = decode_multisig_script(&script).unwrap();
         assert_eq!(m, 2);
         assert_eq!(n, 3);
@@ -682,10 +944,9 @@ mod tests {
         let addr = p2wsh_address(&ws, false).unwrap();
         assert!(addr.starts_with("bc1"));
 
-        // Build witness with 2 dummy signatures
         let sigs = vec![vec![0x30; 71], vec![0x30; 72]];
         let witness = multisig_witness(&sigs, &ws);
-        assert_eq!(witness.len(), 4); // empty + 2 sigs + script
+        assert_eq!(witness.len(), 4);
     }
 
     #[test]
@@ -696,14 +957,43 @@ mod tests {
         let addr = p2sh_p2wsh_address(&ws, false);
         assert!(addr.starts_with('3'));
 
-        // ScriptSig is just the P2WSH scriptPubKey
         let ss = p2sh_p2wsh_script_sig(&wsh);
-        assert_eq!(ss.len(), 35); // 1 push byte + 34 P2WSH scriptPubKey
+        assert_eq!(ss.len(), 35);
 
-        // Witness has the actual sigs
         let sigs = vec![vec![0x30; 71], vec![0x30; 72]];
         let witness = multisig_witness(&sigs, &ws);
         assert_eq!(witness.len(), 4);
+    }
+
+    #[test]
+    fn test_full_flow_real_keys() {
+        let keys = real_pubkeys();
+
+        // P2SH
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let p2sh_addr = p2sh_address(&script, false);
+        assert!(p2sh_addr.starts_with('3'));
+
+        // P2WSH
+        let p2wsh_addr = p2wsh_address(&script, false).unwrap();
+        assert!(p2wsh_addr.starts_with("bc1q"));
+
+        // P2SH-P2WSH
+        let p2sh_p2wsh_addr = p2sh_p2wsh_address(&script, false);
+        assert!(p2sh_p2wsh_addr.starts_with('3'));
+
+        // All different
+        assert_ne!(p2sh_addr, p2sh_p2wsh_addr);
+        assert_ne!(p2sh_addr, p2wsh_addr);
+
+        // ScriptPubKey detection
+        let wsh = witness_script_hash(&script);
+        let spk_p2sh = p2sh_script_pubkey(&script_hash160(&script));
+        let spk_p2wsh = p2wsh_script_pubkey(&wsh);
+        assert!(is_p2sh(&spk_p2sh));
+        assert!(is_p2wsh(&spk_p2wsh));
+        assert!(!is_p2sh(&spk_p2wsh));
+        assert!(!is_p2wsh(&spk_p2sh));
     }
 
     // ─── Push Data ───────────────────────────────────────────────
@@ -712,8 +1002,29 @@ mod tests {
     fn test_push_data_small() {
         let mut s = Vec::new();
         push_data_script(&mut s, &[0xAA; 10]);
-        assert_eq!(s[0], 10); // direct push
+        assert_eq!(s[0], 10);
         assert_eq!(&s[1..], &[0xAA; 10]);
+    }
+
+    #[test]
+    fn test_push_data_boundary_75() {
+        // 75 bytes is the max for direct push
+        let mut s = Vec::new();
+        let data = vec![0xBB; 75];
+        push_data_script(&mut s, &data);
+        assert_eq!(s[0], 75);
+        assert_eq!(s.len(), 76);
+    }
+
+    #[test]
+    fn test_push_data_boundary_76() {
+        // 76 bytes triggers OP_PUSHDATA1
+        let mut s = Vec::new();
+        let data = vec![0xBB; 76];
+        push_data_script(&mut s, &data);
+        assert_eq!(s[0], 0x4C); // OP_PUSHDATA1
+        assert_eq!(s[1], 76);
+        assert_eq!(s.len(), 78);
     }
 
     #[test]
@@ -721,9 +1032,30 @@ mod tests {
         let mut s = Vec::new();
         let data = vec![0xBB; 100];
         push_data_script(&mut s, &data);
-        assert_eq!(s[0], 0x4C); // OP_PUSHDATA1
+        assert_eq!(s[0], 0x4C);
         assert_eq!(s[1], 100);
         assert_eq!(&s[2..], &data[..]);
+    }
+
+    #[test]
+    fn test_push_data_boundary_255() {
+        let mut s = Vec::new();
+        let data = vec![0xCC; 255];
+        push_data_script(&mut s, &data);
+        assert_eq!(s[0], 0x4C); // Still OP_PUSHDATA1
+        assert_eq!(s[1], 255);
+    }
+
+    #[test]
+    fn test_push_data_boundary_256() {
+        // 256 bytes triggers OP_PUSHDATA2
+        let mut s = Vec::new();
+        let data = vec![0xCC; 256];
+        push_data_script(&mut s, &data);
+        assert_eq!(s[0], 0x4D);
+        let len = u16::from_le_bytes([s[1], s[2]]);
+        assert_eq!(len, 256);
+        assert_eq!(s.len(), 259);
     }
 
     #[test]
@@ -731,9 +1063,23 @@ mod tests {
         let mut s = Vec::new();
         let data = vec![0xCC; 300];
         push_data_script(&mut s, &data);
-        assert_eq!(s[0], 0x4D); // OP_PUSHDATA2
+        assert_eq!(s[0], 0x4D);
         let len = u16::from_le_bytes([s[1], s[2]]);
         assert_eq!(len, 300);
+    }
+
+    #[test]
+    fn test_push_data_empty() {
+        let mut s = Vec::new();
+        push_data_script(&mut s, &[]);
+        assert_eq!(s, vec![0x00]); // push 0 bytes
+    }
+
+    #[test]
+    fn test_push_data_single_byte() {
+        let mut s = Vec::new();
+        push_data_script(&mut s, &[0xFF]);
+        assert_eq!(s, vec![0x01, 0xFF]);
     }
 
     // ─── Deterministic Addresses ─────────────────────────────────
@@ -756,12 +1102,103 @@ mod tests {
 
     #[test]
     fn test_different_key_order_different_address() {
-        let mut keys1 = dummy_keys(3);
+        let keys1 = dummy_keys(3);
         let mut keys2 = keys1.clone();
         keys2.swap(0, 1);
         let s1 = multisig_redeem_script(2, &keys1).unwrap();
         let s2 = multisig_redeem_script(2, &keys2).unwrap();
-        // Different key order = different script = different address
         assert_ne!(p2sh_address(&s1, false), p2sh_address(&s2, false));
     }
+
+    // ─── Cross-wrapping Consistency ──────────────────────────────
+
+    #[test]
+    fn test_p2sh_p2wsh_is_hash_of_p2wsh() {
+        let keys = dummy_keys(3);
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let wsh = witness_script_hash(&script);
+
+        // The P2SH-P2WSH address wraps the P2WSH scriptPubKey
+        let p2wsh_spk = p2wsh_script_pubkey(&wsh);
+        let wrapped_addr = p2sh_address(&p2wsh_spk, false);
+        let direct_addr = p2sh_p2wsh_address(&script, false);
+        assert_eq!(wrapped_addr, direct_addr);
+    }
+
+    #[test]
+    fn test_p2sh_p2wsh_script_pubkey_consistency() {
+        let keys = dummy_keys(2);
+        let script = multisig_redeem_script(2, &keys).unwrap();
+        let wsh = witness_script_hash(&script);
+
+        // Build P2SH-P2WSH scriptPubKey two ways
+        let spk1 = p2sh_p2wsh_script_pubkey(&wsh);
+        let inner = p2wsh_script_pubkey(&wsh);
+        let spk2 = p2sh_script_pubkey(&script_hash160(&inner));
+        assert_eq!(spk1, spk2);
+    }
+
+    // ─── Script Size Limits ──────────────────────────────────────
+
+    #[test]
+    fn test_redeem_script_size_under_520() {
+        // 15 keys = 3 + 15*34 = 513 bytes < 520
+        let keys = dummy_keys(15);
+        let script = multisig_redeem_script(1, &keys).unwrap();
+        assert!(script.len() <= MAX_REDEEM_SCRIPT_SIZE);
+        assert_eq!(script.len(), 513);
+    }
+
+    #[test]
+    fn test_threshold_equal_to_n() {
+        // m == n is valid
+        let keys = dummy_keys(5);
+        let script = multisig_redeem_script(5, &keys).unwrap();
+        let (m, n) = decode_multisig_script(&script).unwrap();
+        assert_eq!(m, 5);
+        assert_eq!(n, 5);
+    }
+
+    #[test]
+    fn test_threshold_1_of_15() {
+        let keys = dummy_keys(15);
+        let script = multisig_redeem_script(1, &keys).unwrap();
+        let (m, n) = decode_multisig_script(&script).unwrap();
+        assert_eq!(m, 1);
+        assert_eq!(n, 15);
+    }
+
+    // ─── Error Message Content ───────────────────────────────────
+
+    #[test]
+    fn test_error_message_empty_keys() {
+        let err = multisig_redeem_script(1, &[]).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("no public keys"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_error_message_too_many() {
+        let keys = dummy_keys(16);
+        let err = multisig_redeem_script(1, &keys).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("too many") || msg.contains("16"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_error_message_threshold_zero() {
+        let keys = dummy_keys(2);
+        let err = multisig_redeem_script(0, &keys).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("threshold") || msg.contains(">= 1"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_error_message_threshold_exceeds() {
+        let keys = dummy_keys(2);
+        let err = multisig_redeem_script(5, &keys).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("exceeds") || msg.contains("5"), "got: {msg}");
+    }
 }
+
