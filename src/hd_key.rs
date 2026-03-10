@@ -413,17 +413,21 @@ impl ExtendedPublicKey {
         let mut child_chain = [0u8; 32];
         child_chain.copy_from_slice(&result[32..]);
 
-        // Parse IL as scalar and add to parent point
+        // Parse IL as scalar — BIP-32 §4.3 requires rejecting IL ≥ n
         use k256::elliptic_curve::group::GroupEncoding;
-        use k256::elliptic_curve::ops::Reduce;
-        use k256::{ProjectivePoint, Scalar, U256};
+        use k256::{NonZeroScalar, ProjectivePoint};
 
-        let il_scalar = <Scalar as Reduce<U256>>::reduce(U256::from_be_slice(&il));
+        let il_scalar = NonZeroScalar::try_from(&il as &[u8])
+            .map_err(|_| {
+                SignerError::InvalidPublicKey(
+                    "child key derivation produced invalid IL (>= curve order or zero)".into(),
+                )
+            })?;
         let parent_point = k256::AffinePoint::from_bytes((&self.key).into());
         let parent_proj: ProjectivePoint = Option::from(parent_point.map(ProjectivePoint::from))
             .ok_or_else(|| SignerError::InvalidPublicKey("invalid parent public key".into()))?;
 
-        let child_point = parent_proj + ProjectivePoint::GENERATOR * il_scalar;
+        let child_point = parent_proj + ProjectivePoint::GENERATOR * *il_scalar;
 
         // Serialize child public key
         use k256::elliptic_curve::sec1::ToEncodedPoint;

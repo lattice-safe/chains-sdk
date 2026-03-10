@@ -107,6 +107,15 @@ impl EthereumSignature {
 
     /// Extract the recovery bit (0 or 1) from `v`, handling both
     /// legacy (v=27/28) and EIP-155 (v = chain_id*2 + 35 + {0,1}).
+    ///
+    /// # Intentionally Rejected Values
+    ///
+    /// `v=35` and `v=36` (EIP-155 with `chain_id=0`) are rejected as
+    /// non-canonical. While technically valid per the EIP-155 formula,
+    /// `chain_id=0` defeats the purpose of replay protection and is
+    /// ambiguous with pre-EIP-155 signatures. This matches the
+    /// behavior of `sign_digest_with_chain_id`, which also rejects
+    /// `chain_id=0`.
     pub fn recovery_bit(&self) -> Result<u8, SignerError> {
         if self.v >= 35 {
             // EIP-155 with chain_id=0 (v=35/36) is non-canonical.
