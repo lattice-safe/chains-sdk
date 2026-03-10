@@ -430,12 +430,14 @@ impl PsbtV2 {
         let mut input_count: Option<usize> = None;
         let mut output_count: Option<usize> = None;
         let mut found_version = false;
+        let mut found_global_terminator = false;
         let mut seen_global_keys: HashSet<Vec<u8>> = HashSet::new();
 
         // Parse global map
         while pos < data.len() {
             if data[pos] == 0x00 {
                 pos += 1;
+                found_global_terminator = true;
                 break;
             }
 
@@ -502,6 +504,12 @@ impl PsbtV2 {
             } else {
                 psbt.global_extra.push((key, val));
             }
+        }
+
+        if !found_global_terminator {
+            return Err(SignerError::ParseError(
+                "PSBTv2: unterminated global map".into(),
+            ));
         }
 
         if !found_version {
@@ -782,9 +790,13 @@ fn compact_size(n: usize) -> Vec<u8> {
         let mut v = vec![0xFD];
         v.extend_from_slice(&(n as u16).to_le_bytes());
         v
-    } else {
+    } else if n <= 0xFFFF_FFFF {
         let mut v = vec![0xFE];
         v.extend_from_slice(&(n as u32).to_le_bytes());
+        v
+    } else {
+        let mut v = vec![0xFF];
+        v.extend_from_slice(&(n as u64).to_le_bytes());
         v
     }
 }
@@ -1283,6 +1295,23 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_rejects_unterminated_global_map() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"psbt\xFF");
+        write_kv(&mut data, &[global_key::VERSION], &2u32.to_le_bytes());
+        write_kv(&mut data, &[global_key::TX_VERSION], &2u32.to_le_bytes());
+        write_kv(
+            &mut data,
+            &[global_key::FALLBACK_LOCKTIME],
+            &0u32.to_le_bytes(),
+        );
+        write_kv(&mut data, &[global_key::INPUT_COUNT], &compact_size(0));
+        write_kv(&mut data, &[global_key::OUTPUT_COUNT], &compact_size(0));
+        // No 0x00 global-map terminator.
+        assert!(PsbtV2::deserialize(&data).is_err());
+    }
+
+    #[test]
     fn test_deserialize_rejects_input_missing_previous_txid() {
         let mut data = minimal_psbt_with_counts(1, 0);
         write_kv(&mut data, &[input_key::OUTPUT_INDEX], &0u32.to_le_bytes());
@@ -1436,6 +1465,18 @@ mod tests {
         let cs = compact_size(70000);
         assert_eq!(cs[0], 0xFE);
         assert_eq!(u32::from_le_bytes([cs[1], cs[2], cs[3], cs[4]]), 70000);
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn test_compact_size_very_large_uses_u64_variant() {
+        let n = 0x1_0000_0000usize;
+        let cs = compact_size(n);
+        assert_eq!(cs[0], 0xFF);
+        assert_eq!(
+            u64::from_le_bytes([cs[1], cs[2], cs[3], cs[4], cs[5], cs[6], cs[7], cs[8]]),
+            n as u64
+        );
     }
 
     // ─── Read Compact Size ───────────────────────────────────────

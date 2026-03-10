@@ -26,7 +26,7 @@ mod cross_chain {
         let btc_sig = btc.sign(msg).unwrap();
 
         // Signatures must differ (different hash functions)
-        let eth_bytes = eth_sig.to_bytes();
+        let eth_bytes = eth_sig.to_bytes().unwrap();
         assert_ne!(
             &eth_bytes[..64],
             &btc_sig.der_bytes()[..64.min(btc_sig.der_bytes().len())]

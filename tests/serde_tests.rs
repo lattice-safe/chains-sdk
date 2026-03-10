@@ -13,7 +13,7 @@ fn serde_ethereum_signature_roundtrip() {
     };
     let json = serde_json::to_string(&sig).unwrap();
     let restored: EthereumSignature = serde_json::from_str(&json).unwrap();
-    assert_eq!(sig.to_bytes(), restored.to_bytes());
+    assert_eq!(sig.to_bytes().unwrap(), restored.to_bytes().unwrap());
 }
 
 #[cfg(all(feature = "serde", feature = "bitcoin"))]

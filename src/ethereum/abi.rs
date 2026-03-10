@@ -290,6 +290,11 @@ pub fn decode_address(data: &[u8]) -> Result<[u8; 20], SignerError> {
             "ABI: need 32 bytes for address".into(),
         ));
     }
+    if data[..12].iter().any(|b| *b != 0) {
+        return Err(SignerError::ParseError(
+            "ABI: non-canonical address padding".into(),
+        ));
+    }
     let mut addr = [0u8; 20];
     addr.copy_from_slice(&data[12..32]);
     Ok(addr)
@@ -302,7 +307,18 @@ pub fn decode_bool(data: &[u8]) -> Result<bool, SignerError> {
             "ABI: need 32 bytes for bool".into(),
         ));
     }
-    Ok(data[31] != 0)
+    if data[..31].iter().any(|b| *b != 0) {
+        return Err(SignerError::ParseError(
+            "ABI: non-canonical bool padding".into(),
+        ));
+    }
+    match data[31] {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(SignerError::ParseError(
+            "ABI: non-canonical bool value".into(),
+        )),
+    }
 }
 
 /// Decode dynamic `bytes` from ABI-encoded data at a given offset.
@@ -314,11 +330,21 @@ pub fn decode_bytes(data: &[u8], param_offset: usize) -> Result<Vec<u8>, SignerE
             "ABI: parameter offset out of range".into(),
         ));
     }
+    if param_offset % 32 != 0 {
+        return Err(SignerError::ParseError(
+            "ABI: parameter offset must be 32-byte aligned".into(),
+        ));
+    }
 
     // Read the offset (big-endian u64 in 32 bytes)
     let offset_u64 = decode_uint256_as_u64(&data[param_offset..])?;
     let offset = usize::try_from(offset_u64)
         .map_err(|_| SignerError::ParseError("ABI: bytes offset exceeds usize".into()))?;
+    if offset % 32 != 0 {
+        return Err(SignerError::ParseError(
+            "ABI: bytes offset must be 32-byte aligned".into(),
+        ));
+    }
 
     // At `offset`: length (32 bytes) + data
     let start = offset
@@ -694,6 +720,28 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_address_rejects_non_canonical_padding() {
+        let mut encoded = encode(&[AbiValue::Address([0x11; 20])]);
+        encoded[0] = 0x01; // upper 12-byte padding must be zero
+        assert!(decode_address(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_decode_bool_rejects_non_canonical_value() {
+        let mut encoded = [0u8; 32];
+        encoded[31] = 2; // only 0 or 1 are canonical
+        assert!(decode_bool(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_decode_bool_rejects_non_canonical_padding() {
+        let mut encoded = [0u8; 32];
+        encoded[0] = 1; // padding bytes must be zero
+        encoded[31] = 1;
+        assert!(decode_bool(&encoded).is_err());
+    }
+
+    #[test]
     fn test_decode_bytes_roundtrip() {
         let data = vec![0xCA, 0xFE, 0xBA, 0xBE];
         let encoded = encode(&[AbiValue::Bytes(data.clone())]);
@@ -713,6 +761,20 @@ mod tests {
     fn test_decode_bytes_param_offset_out_of_range() {
         let encoded = encode(&[AbiValue::Bytes(vec![0xAA, 0xBB])]);
         assert!(decode_bytes(&encoded, encoded.len() + 1).is_err());
+    }
+
+    #[test]
+    fn test_decode_bytes_rejects_unaligned_param_offset() {
+        let encoded = encode(&[AbiValue::Bytes(vec![0xAA, 0xBB])]);
+        assert!(decode_bytes(&encoded, 1).is_err());
+    }
+
+    #[test]
+    fn test_decode_bytes_rejects_unaligned_dynamic_offset() {
+        let mut encoded = encode(&[AbiValue::Bytes(vec![0xAA, 0xBB])]);
+        // Corrupt dynamic offset from 0x20 to 0x21
+        encoded[31] = 0x21;
+        assert!(decode_bytes(&encoded, 0).is_err());
     }
 
     // ─── Contract Deploy Tests ─────────────────────────────────────

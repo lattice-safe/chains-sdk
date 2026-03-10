@@ -181,13 +181,22 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
 
     match prefix {
         // Single byte [0x00, 0x7F]
-        0x00..=0x7F => Ok((RlpItem::Bytes(vec![prefix]), offset + 1)),
+        0x00..=0x7F => {
+            let next = offset.checked_add(1).ok_or_else(|| {
+                SignerError::ParseError("RLP: single-byte offset overflow".into())
+            })?;
+            Ok((RlpItem::Bytes(vec![prefix]), next))
+        }
 
         // Short string: 0x80 + len, data (0–55 bytes)
         0x80..=0xB7 => {
             let len = (prefix - 0x80) as usize;
-            let start = offset + 1;
-            let end = start + len;
+            let start = offset.checked_add(1).ok_or_else(|| {
+                SignerError::ParseError("RLP: short string offset overflow".into())
+            })?;
+            let end = start.checked_add(len).ok_or_else(|| {
+                SignerError::ParseError("RLP: short string length overflow".into())
+            })?;
             if end > data.len() {
                 return Err(SignerError::ParseError("RLP: string truncated".into()));
             }
@@ -203,14 +212,19 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
         // Long string: 0xB7 + len_of_len
         0xB8..=0xBF => {
             let len_of_len = (prefix - 0xB7) as usize;
-            let len = read_be_usize(data, offset + 1, len_of_len)?;
+            let len_start = offset.checked_add(1).ok_or_else(|| {
+                SignerError::ParseError("RLP: long string offset overflow".into())
+            })?;
+            let len = read_be_usize(data, len_start, len_of_len)?;
             // Canonical checks
             if len <= 55 {
                 return Err(SignerError::ParseError(
                     "RLP: non-canonical long-form for short string".into(),
                 ));
             }
-            let start = offset + 1 + len_of_len;
+            let start = len_start.checked_add(len_of_len).ok_or_else(|| {
+                SignerError::ParseError("RLP: long string header overflow".into())
+            })?;
             let end = start.checked_add(len).ok_or_else(|| {
                 SignerError::ParseError("RLP: long string length overflow".into())
             })?;
@@ -223,8 +237,12 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
         // Short list: 0xC0 + len
         0xC0..=0xF7 => {
             let list_len = (prefix - 0xC0) as usize;
-            let start = offset + 1;
-            let end = start + list_len;
+            let start = offset
+                .checked_add(1)
+                .ok_or_else(|| SignerError::ParseError("RLP: short list offset overflow".into()))?;
+            let end = start
+                .checked_add(list_len)
+                .ok_or_else(|| SignerError::ParseError("RLP: short list length overflow".into()))?;
             if end > data.len() {
                 return Err(SignerError::ParseError("RLP: list truncated".into()));
             }
@@ -235,14 +253,19 @@ fn decode_item(data: &[u8], offset: usize) -> Result<(RlpItem, usize), SignerErr
         // Long list: 0xF7 + len_of_len
         0xF8..=0xFF => {
             let len_of_len = (prefix - 0xF7) as usize;
-            let list_len = read_be_usize(data, offset + 1, len_of_len)?;
+            let len_start = offset
+                .checked_add(1)
+                .ok_or_else(|| SignerError::ParseError("RLP: long list offset overflow".into()))?;
+            let list_len = read_be_usize(data, len_start, len_of_len)?;
             // Canonical check: long form only for len > 55
             if list_len <= 55 {
                 return Err(SignerError::ParseError(
                     "RLP: non-canonical long-form for short list".into(),
                 ));
             }
-            let start = offset + 1 + len_of_len;
+            let start = len_start
+                .checked_add(len_of_len)
+                .ok_or_else(|| SignerError::ParseError("RLP: long list header overflow".into()))?;
             let end = start
                 .checked_add(list_len)
                 .ok_or_else(|| SignerError::ParseError("RLP: long list length overflow".into()))?;

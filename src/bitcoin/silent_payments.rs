@@ -87,9 +87,9 @@ pub fn parse_address(address: &str) -> Result<SilentPaymentAddress, SignerError>
     let payload = hex::decode(data_part)
         .map_err(|_| SignerError::ParseError("invalid SP address hex".into()))?;
 
-    if payload.len() < 67 {
+    if payload.len() != 67 {
         return Err(SignerError::ParseError(format!(
-            "SP payload too short: {} < 67",
+            "SP payload length must be exactly 67 bytes, got {}",
             payload.len()
         )));
     }
@@ -105,6 +105,10 @@ pub fn parse_address(address: &str) -> Result<SilentPaymentAddress, SignerError>
     let mut spend = [0u8; 33];
     scan.copy_from_slice(&payload[1..34]);
     spend.copy_from_slice(&payload[34..67]);
+
+    // Reject malformed public keys early during address parsing.
+    parse_point(&scan)?;
+    parse_point(&spend)?;
 
     Ok(SilentPaymentAddress {
         scan_pubkey: scan,
@@ -273,11 +277,9 @@ fn parse_point(bytes: &[u8; 33]) -> Result<ProjectivePoint, SignerError> {
     let repr = k256::EncodedPoint::from_bytes(bytes)
         .map_err(|_| SignerError::ParseError("invalid point encoding".into()))?;
     let point = AffinePoint::from_encoded_point(&repr);
-    if point.is_none().into() {
-        return Err(SignerError::ParseError("invalid curve point".into()));
-    }
-    #[allow(clippy::unwrap_used)]
-    Ok(ProjectivePoint::from(point.unwrap()))
+    let point: Option<AffinePoint> = point.into();
+    let point = point.ok_or_else(|| SignerError::ParseError("invalid curve point".into()))?;
+    Ok(ProjectivePoint::from(point))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -358,6 +360,24 @@ mod tests {
     #[test]
     fn test_parse_address_too_short() {
         assert!(parse_address("sp:0000").is_err());
+    }
+
+    #[test]
+    fn test_parse_address_rejects_trailing_bytes() {
+        let scan = pubkey_from_secret(&SK1).unwrap();
+        let spend = pubkey_from_secret(&SK2).unwrap();
+        let mut addr = create_address(&scan, &spend, "sp");
+        addr.push_str("00");
+        assert!(parse_address(&addr).is_err());
+    }
+
+    #[test]
+    fn test_parse_address_rejects_invalid_pubkeys() {
+        let mut payload = [0u8; 67];
+        payload[0] = 0x00;
+        // 33-byte invalid compressed pubkeys (all zeros) for scan/spend
+        let addr = format!("sp:{}", hex::encode(payload));
+        assert!(parse_address(&addr).is_err());
     }
 
     // ─── ECDH Shared Secret ─────────────────────────────────────

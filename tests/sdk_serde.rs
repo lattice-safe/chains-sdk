@@ -29,7 +29,7 @@ mod eth_serde {
     fn test_sig_bytes_roundtrip() {
         let signer = EthereumSigner::generate().unwrap();
         let sig = signer.sign(b"roundtrip").unwrap();
-        let bytes = sig.to_bytes();
+        let bytes = sig.to_bytes().unwrap();
         let restored = EthereumSignature::from_bytes(&bytes).unwrap();
         assert_eq!(sig.r, restored.r);
         assert_eq!(sig.s, restored.s);

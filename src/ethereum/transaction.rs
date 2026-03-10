@@ -842,6 +842,11 @@ fn recover_signer(
     sig_bytes[32..].copy_from_slice(s);
     let sig = K256Signature::from_bytes((&sig_bytes).into())
         .map_err(|e| SignerError::InvalidSignature(format!("invalid sig: {e}")))?;
+    if sig.normalize_s().is_some() {
+        return Err(SignerError::InvalidSignature(
+            "non-canonical high-s signature".into(),
+        ));
+    }
     let rid = RecoveryId::new(recovery_id != 0, false);
     let key = VerifyingKey::recover_from_prehash(hash, &sig, rid)
         .map_err(|e| SignerError::InvalidSignature(format!("ecrecover: {e}")))?;
@@ -870,7 +875,7 @@ fn pad_to_32(data: &[u8]) -> Result<[u8; 32], SignerError> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::traits::KeyPair;
+    use crate::traits::{KeyPair, Signer};
 
     #[test]
     fn test_legacy_tx_sign_recoverable() {
@@ -1230,6 +1235,25 @@ mod tests {
             }
             other => panic!("expected ParseError for non-canonical v, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_recover_signer_rejects_high_s_signature() {
+        let signer = EthereumSigner::generate().unwrap();
+        let sig = signer.sign(b"tx-high-s-reject").unwrap();
+        let digest = keccak256(b"tx-high-s-reject");
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&digest);
+        let recovery_id = (sig.v - 27) as u8;
+
+        // secp256k1 n - 1 (valid scalar, always high-s)
+        let high_s = [
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFE, 0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C,
+            0xD0, 0x36, 0x41, 0x40,
+        ];
+
+        assert!(recover_signer(&hash, &sig.r, &high_s, recovery_id).is_err());
     }
 
     #[test]

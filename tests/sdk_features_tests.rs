@@ -36,9 +36,8 @@ mod eip155 {
     #[test]
     fn test_eip155_chain_id_0() {
         let signer = EthereumSigner::generate().unwrap();
-        let sig = signer.sign_with_chain_id(b"test", 0).unwrap();
-        // v = 35 + 0*2 + {0,1} = 35 or 36
-        assert!(sig.v == 35 || sig.v == 36);
+        assert!(signer.sign_with_chain_id(b"test", 0).is_err());
+        assert!(signer.personal_sign_with_chain_id(b"test", 0).is_err());
     }
 
     #[test]

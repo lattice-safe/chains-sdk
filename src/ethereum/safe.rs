@@ -29,7 +29,7 @@
 //! };
 //!
 //! let sig = tx.sign(&signer, &domain).unwrap();
-//! let calldata = tx.encode_exec_transaction(&[sig]);
+//! let calldata = tx.encode_exec_transaction(&[sig]).unwrap();
 //! ```
 
 use crate::error::SignerError;
@@ -137,13 +137,15 @@ impl SafeTransaction {
     ///
     /// This produces the full calldata to call `execTransaction` on the Safe contract,
     /// ready for use in a transaction's `data` field.
-    #[must_use]
-    pub fn encode_exec_transaction(&self, signatures: &[super::EthereumSignature]) -> Vec<u8> {
-        let packed_sigs = encode_signatures(signatures);
+    pub fn encode_exec_transaction(
+        &self,
+        signatures: &[super::EthereumSignature],
+    ) -> Result<Vec<u8>, SignerError> {
+        let packed_sigs = encode_signatures(signatures)?;
         let func = abi::Function::new(
             "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
         );
-        func.encode(&[
+        Ok(func.encode(&[
             AbiValue::Address(self.to),
             AbiValue::Uint256(self.value),
             AbiValue::Bytes(self.data.clone()),
@@ -154,7 +156,7 @@ impl SafeTransaction {
             AbiValue::Address(self.gas_token),
             AbiValue::Address(self.refund_receiver),
             AbiValue::Bytes(packed_sigs),
-        ])
+        ]))
     }
 }
 
@@ -183,15 +185,15 @@ pub fn safe_domain_separator(chain_id: u64, safe_address: &[u8; 20]) -> [u8; 32]
 /// Each signature is encoded as `r (32 bytes) || s (32 bytes) || v (1 byte)`.
 /// Signatures must be sorted by signer address (ascending) — this function
 /// does NOT sort them (the caller is responsible for ordering).
-#[must_use]
-pub fn encode_signatures(signatures: &[super::EthereumSignature]) -> Vec<u8> {
+pub fn encode_signatures(signatures: &[super::EthereumSignature]) -> Result<Vec<u8>, SignerError> {
     let mut packed = Vec::with_capacity(signatures.len() * 65);
     for sig in signatures {
+        let v = safe_signature_v_byte(sig.v)?;
         packed.extend_from_slice(&sig.r);
         packed.extend_from_slice(&sig.s);
-        packed.push(sig.v as u8);
+        packed.push(v);
     }
-    packed
+    Ok(packed)
 }
 
 /// Decode packed Safe signatures back into individual signatures.
@@ -205,15 +207,13 @@ pub fn decode_signatures(data: &[u8]) -> Result<Vec<super::EthereumSignature>, S
             data.len()
         )));
     }
-    let count = data.len() / 65;
-    let mut sigs = Vec::with_capacity(count);
-    for i in 0..count {
-        let offset = i * 65;
+    let mut sigs = Vec::with_capacity(data.len() / 65);
+    for chunk in data.chunks_exact(65) {
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
-        r.copy_from_slice(&data[offset..offset + 32]);
-        s.copy_from_slice(&data[offset + 32..offset + 64]);
-        let v = u64::from(data[offset + 64]);
+        r.copy_from_slice(&chunk[..32]);
+        s.copy_from_slice(&chunk[32..64]);
+        let v = u64::from(chunk[64]);
         sigs.push(super::EthereumSignature { r, s, v });
     }
     Ok(sigs)
@@ -369,7 +369,7 @@ pub struct SignerSignature {
 ///     gas_token: [0u8; 20], refund_receiver: [0u8; 20], nonce: [0u8; 32],
 /// };
 /// let sorted_sigs = sign_and_sort(&tx, &[&owner1, &owner2], &domain).unwrap();
-/// let calldata = tx.encode_exec_transaction(&sorted_sigs);
+/// let calldata = tx.encode_exec_transaction(&sorted_sigs).unwrap();
 /// ```
 pub fn sign_and_sort(
     tx: &SafeTransaction,
@@ -408,11 +408,20 @@ pub fn encode_signatures_sorted(
 
     let mut packed = Vec::with_capacity(pairs.len() * 65);
     for (_, sig) in &pairs {
+        let v = safe_signature_v_byte(sig.v)?;
         packed.extend_from_slice(&sig.r);
         packed.extend_from_slice(&sig.s);
-        packed.push(sig.v as u8);
+        packed.push(v);
     }
     Ok(packed)
+}
+
+fn safe_signature_v_byte(v: u64) -> Result<u8, SignerError> {
+    u8::try_from(v).map_err(|_| {
+        SignerError::InvalidSignature(format!(
+            "safe signature v value {v} does not fit in one byte"
+        ))
+    })
 }
 
 // ─── On-Chain Approval (approveHash) ───────────────────────────────
@@ -853,7 +862,7 @@ mod tests {
 
     #[test]
     fn test_encode_signatures_empty() {
-        let packed = encode_signatures(&[]);
+        let packed = encode_signatures(&[]).unwrap();
         assert!(packed.is_empty());
     }
 
@@ -864,7 +873,7 @@ mod tests {
             s: [0xBB; 32],
             v: 27,
         };
-        let packed = encode_signatures(&[sig]);
+        let packed = encode_signatures(&[sig]).unwrap();
         assert_eq!(packed.len(), 65);
         assert_eq!(&packed[..32], &[0xAA; 32]);
         assert_eq!(&packed[32..64], &[0xBB; 32]);
@@ -883,10 +892,20 @@ mod tests {
             s: [0x44; 32],
             v: 28,
         };
-        let packed = encode_signatures(&[sig1, sig2]);
+        let packed = encode_signatures(&[sig1, sig2]).unwrap();
         assert_eq!(packed.len(), 130);
         assert_eq!(packed[64], 27);
         assert_eq!(packed[129], 28);
+    }
+
+    #[test]
+    fn test_encode_signatures_rejects_large_v() {
+        let sig = super::super::EthereumSignature {
+            r: [0xAA; 32],
+            s: [0xBB; 32],
+            v: 1_000,
+        };
+        assert!(encode_signatures(&[sig]).is_err());
     }
 
     // ─── Signature Decoding ───────────────────────────────────
@@ -903,7 +922,7 @@ mod tests {
             s: [0xDD; 32],
             v: 28,
         };
-        let packed = encode_signatures(&[sig1.clone(), sig2.clone()]);
+        let packed = encode_signatures(&[sig1.clone(), sig2.clone()]).unwrap();
         let decoded = decode_signatures(&packed).unwrap();
         assert_eq!(decoded.len(), 2);
         assert_eq!(decoded[0], sig1);
@@ -932,7 +951,7 @@ mod tests {
             s: [0xBB; 32],
             v: 27,
         };
-        let calldata = tx.encode_exec_transaction(&[sig]);
+        let calldata = tx.encode_exec_transaction(&[sig]).unwrap();
         let expected_selector = abi::function_selector(
             "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
         );
@@ -947,7 +966,7 @@ mod tests {
             s: [0xBB; 32],
             v: 27,
         };
-        let calldata = tx.encode_exec_transaction(&[sig]);
+        let calldata = tx.encode_exec_transaction(&[sig]).unwrap();
         assert!(calldata.len() > 4 + 10 * 32);
     }
 
@@ -1236,7 +1255,7 @@ mod tests {
         assert_eq!(sorted.len(), 2);
 
         // Build exec calldata
-        let calldata = tx.encode_exec_transaction(&sorted);
+        let calldata = tx.encode_exec_transaction(&sorted).unwrap();
         assert!(calldata.len() > 4 + 10 * 32 + 2 * 65);
     }
 
@@ -1250,7 +1269,7 @@ mod tests {
         let ecdsa_sig = tx.sign(&signer, &domain).unwrap();
         let pre_sig = pre_validated_signature([0x01; 20]);
 
-        let packed = encode_signatures(&[pre_sig, ecdsa_sig]);
+        let packed = encode_signatures(&[pre_sig, ecdsa_sig]).unwrap();
         assert_eq!(packed.len(), 2 * 65);
 
         // First sig should be v=1 (pre-validated)

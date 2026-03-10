@@ -59,15 +59,22 @@ impl core::fmt::Display for EthereumSignature {
 }
 
 impl EthereumSignature {
-    /// Encode as 65-byte `r || s || v` (legacy, v truncated to u8).
+    /// Encode as 65-byte `r || s || v` where `v` must fit in one byte.
     ///
+    /// This format is suitable for legacy-style recoverable signatures.
     /// For EIP-155 signatures with high chain IDs, use `to_bytes_eip155()` instead.
-    pub fn to_bytes(&self) -> [u8; 65] {
+    pub fn to_bytes(&self) -> Result<[u8; 65], SignerError> {
+        let v = u8::try_from(self.v).map_err(|_| {
+            SignerError::InvalidSignature(format!(
+                "v value {} does not fit in a single byte; use to_bytes_eip155()",
+                self.v
+            ))
+        })?;
         let mut out = [0u8; 65];
         out[..32].copy_from_slice(&self.r);
         out[32..64].copy_from_slice(&self.s);
-        out[64] = self.v as u8;
-        out
+        out[64] = v;
+        Ok(out)
     }
 
     /// Encode as `r (32) || s (32) || v (8 bytes BE)` for EIP-155 with large chain IDs.
@@ -102,6 +109,13 @@ impl EthereumSignature {
     /// legacy (v=27/28) and EIP-155 (v = chain_id*2 + 35 + {0,1}).
     pub fn recovery_bit(&self) -> Result<u8, SignerError> {
         if self.v >= 35 {
+            // EIP-155 with chain_id=0 (v=35/36) is non-canonical.
+            if self.v <= 36 {
+                return Err(SignerError::InvalidSignature(format!(
+                    "non-canonical EIP-155 v value {}",
+                    self.v
+                )));
+            }
             // EIP-155: recovery_bit = (v - 35) % 2
             Ok(((self.v - 35) % 2) as u8)
         } else {
@@ -221,6 +235,11 @@ impl EthereumSigner {
         digest: &[u8; 32],
         chain_id: u64,
     ) -> Result<EthereumSignature, SignerError> {
+        if chain_id == 0 {
+            return Err(SignerError::SigningFailed(
+                "chain_id must be non-zero for EIP-155 signatures".into(),
+            ));
+        }
         let mut sig = self.sign_digest(digest)?;
         // Convert v from legacy (27/28) to EIP-155 (35 + chain_id*2 + {0,1})
         let recovery_bit = sig.v - 27; // 0 or 1
@@ -374,6 +393,11 @@ pub fn ecrecover_digest(
     sig_bytes[32..].copy_from_slice(&signature.s);
     let sig = K256Signature::from_bytes((&sig_bytes).into())
         .map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
+    if sig.normalize_s().is_some() {
+        return Err(SignerError::InvalidSignature(
+            "non-canonical high-s signature".into(),
+        ));
+    }
 
     let recovered_key = VerifyingKey::recover_from_prehash(digest, &sig, rec_id)
         .map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
@@ -609,6 +633,11 @@ impl EthereumVerifier {
 
         let k256_sig = K256Signature::from_bytes((&sig_bytes).into())
             .map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
+        if k256_sig.normalize_s().is_some() {
+            return Err(SignerError::InvalidSignature(
+                "non-canonical high-s signature".into(),
+            ));
+        }
 
         let recovered = VerifyingKey::recover_from_prehash(digest, &k256_sig, rec_id)
             .map_err(|e| SignerError::InvalidSignature(e.to_string()))?;
@@ -792,6 +821,37 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_rejects_high_s_signature() {
+        let signer = EthereumSigner::generate().unwrap();
+        let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
+        let mut sig = signer.sign(b"high-s reject").unwrap();
+
+        // secp256k1 n - 1 (valid scalar, always high-s)
+        sig.s = [
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFE, 0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C,
+            0xD0, 0x36, 0x41, 0x40,
+        ];
+
+        assert!(verifier.verify(b"high-s reject", &sig).is_err());
+    }
+
+    #[test]
+    fn test_ecrecover_rejects_high_s_signature() {
+        let signer = EthereumSigner::generate().unwrap();
+        let mut sig = signer.sign(b"high-s ecrecover").unwrap();
+
+        // secp256k1 n - 1 (valid scalar, always high-s)
+        sig.s = [
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFE, 0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C,
+            0xD0, 0x36, 0x41, 0x40,
+        ];
+
+        assert!(ecrecover(b"high-s ecrecover", &sig).is_err());
+    }
+
+    #[test]
     fn test_wrong_pubkey_fails() {
         let signer1 = EthereumSigner::generate().unwrap();
         let signer2 = EthereumSigner::generate().unwrap();
@@ -860,11 +920,21 @@ mod tests {
     fn test_signature_bytes_roundtrip() {
         let signer = EthereumSigner::generate().unwrap();
         let sig = signer.sign(b"roundtrip").unwrap();
-        let bytes = sig.to_bytes();
+        let bytes = sig.to_bytes().unwrap();
         let restored = EthereumSignature::from_bytes(&bytes).unwrap();
         assert_eq!(sig.r, restored.r);
         assert_eq!(sig.s, restored.s);
         assert_eq!(sig.v, restored.v);
+    }
+
+    #[test]
+    fn test_signature_bytes_reject_large_v() {
+        let signer = EthereumSigner::generate().unwrap();
+        let sig = signer.sign_with_chain_id(b"large-v", 137).unwrap();
+        assert!(sig.v > u8::MAX as u64);
+        assert!(sig.to_bytes().is_err());
+        // Extended EIP-155 serializer remains available.
+        assert_eq!(sig.to_bytes_eip155().len(), 72);
     }
 
     #[test]
@@ -876,6 +946,25 @@ mod tests {
 
         let verifier = EthereumVerifier::from_public_key_bytes(&signer.public_key_bytes()).unwrap();
         assert!(verifier.verify(b"invalid-v", &sig).is_err());
+    }
+
+    #[test]
+    fn test_non_canonical_eip155_v_rejected() {
+        let signer = EthereumSigner::generate().unwrap();
+        let mut sig = signer.sign(b"invalid-eip155-v").unwrap();
+        sig.v = 35;
+        assert!(ecrecover(b"invalid-eip155-v", &sig).is_err());
+        sig.v = 36;
+        assert!(ecrecover(b"invalid-eip155-v", &sig).is_err());
+    }
+
+    #[test]
+    fn test_sign_with_chain_id_zero_rejected() {
+        let signer = EthereumSigner::generate().unwrap();
+        assert!(signer.sign_with_chain_id(b"chain-id-zero", 0).is_err());
+        assert!(signer
+            .personal_sign_with_chain_id(b"chain-id-zero", 0)
+            .is_err());
     }
 
     // ─── EIP-712 Tests ──────────────────────────────────────────────────

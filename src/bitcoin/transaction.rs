@@ -238,16 +238,25 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
 
     let mut inputs = Vec::with_capacity(input_count);
     for _ in 0..input_count {
-        if off + 36 > data.len() {
+        let outpoint_end = off
+            .checked_add(36)
+            .ok_or_else(|| SignerError::ParseError("tx: input outpoint offset overflow".into()))?;
+        if outpoint_end > data.len() {
             return Err(SignerError::ParseError(
                 "tx truncated in input outpoint".into(),
             ));
         }
+        let txid_end = off
+            .checked_add(32)
+            .ok_or_else(|| SignerError::ParseError("tx: txid offset overflow".into()))?;
         let mut txid = [0u8; 32];
-        txid.copy_from_slice(&data[off..off + 32]);
-        off += 32;
-        let vout = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
-        off += 4;
+        txid.copy_from_slice(&data[off..txid_end]);
+        let vout = u32::from_le_bytes(
+            data[txid_end..outpoint_end]
+                .try_into()
+                .map_err(|_| SignerError::ParseError("tx truncated in input vout".into()))?,
+        );
+        off = outpoint_end;
 
         let script_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
         let script_end = off
@@ -259,11 +268,18 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
         let script_sig = data[off..script_end].to_vec();
         off = script_end;
 
-        if off + 4 > data.len() {
+        let sequence_end = off
+            .checked_add(4)
+            .ok_or_else(|| SignerError::ParseError("tx: sequence offset overflow".into()))?;
+        if sequence_end > data.len() {
             return Err(SignerError::ParseError("tx truncated in sequence".into()));
         }
-        let sequence = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
-        off += 4;
+        let sequence = u32::from_le_bytes(
+            data[off..sequence_end]
+                .try_into()
+                .map_err(|_| SignerError::ParseError("tx truncated in sequence".into()))?,
+        );
+        off = sequence_end;
 
         inputs.push(TxIn {
             previous_output: OutPoint { txid, vout },
@@ -293,15 +309,18 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
 
     let mut outputs = Vec::with_capacity(output_count);
     for _ in 0..output_count {
-        if off + 8 > data.len() {
+        let value_end = off
+            .checked_add(8)
+            .ok_or_else(|| SignerError::ParseError("tx: output value offset overflow".into()))?;
+        if value_end > data.len() {
             return Err(SignerError::ParseError(
                 "tx truncated in output value".into(),
             ));
         }
         let mut val_bytes = [0u8; 8];
-        val_bytes.copy_from_slice(&data[off..off + 8]);
+        val_bytes.copy_from_slice(&data[off..value_end]);
         let value = u64::from_le_bytes(val_bytes);
-        off += 8;
+        off = value_end;
 
         let spk_len = safe_usize(encoding::read_compact_size(data, &mut off)?)?;
         let spk_end = off
@@ -322,11 +341,18 @@ pub fn parse_unsigned_tx(data: &[u8]) -> Result<Transaction, crate::error::Signe
     }
 
     // locktime (4 bytes LE)
-    if off + 4 > data.len() {
+    let locktime_end = off
+        .checked_add(4)
+        .ok_or_else(|| SignerError::ParseError("tx: locktime offset overflow".into()))?;
+    if locktime_end > data.len() {
         return Err(SignerError::ParseError("tx truncated in locktime".into()));
     }
-    let locktime = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
-    off += 4;
+    let locktime = u32::from_le_bytes(
+        data[off..locktime_end]
+            .try_into()
+            .map_err(|_| SignerError::ParseError("tx truncated in locktime".into()))?,
+    );
+    off = locktime_end;
 
     // Strict parsing: reject trailing bytes
     if off != data.len() {
@@ -447,8 +473,14 @@ pub fn build_batch_transaction(
         return Err(SignerError::ParseError("no recipients provided".into()));
     }
 
-    let total_input: u64 = utxos.iter().map(|(_, v)| v).sum();
-    let total_output: u64 = recipients.iter().map(|r| r.amount).sum();
+    let total_input = utxos.iter().try_fold(0u64, |acc, (_, v)| {
+        acc.checked_add(*v)
+            .ok_or_else(|| SignerError::ParseError("total input amount overflowed u64".into()))
+    })?;
+    let total_output = recipients.iter().try_fold(0u64, |acc, r| {
+        acc.checked_add(r.amount)
+            .ok_or_else(|| SignerError::ParseError("total output amount overflowed u64".into()))
+    })?;
 
     if total_input < total_output {
         return Err(SignerError::ParseError(format!(
@@ -458,7 +490,10 @@ pub fn build_batch_transaction(
     }
 
     // Build transaction with change to estimate size
-    let num_outputs_with_change = recipients.len() + 1;
+    let num_outputs_with_change = recipients
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| SignerError::ParseError("recipient count overflow".into()))?;
     let estimated_vsize = estimate_vsize(utxos.len(), 0, 0, num_outputs_with_change);
     let estimated_fee = (estimated_vsize as u64).saturating_mul(fee_rate_sat_per_vb);
 
@@ -496,7 +531,10 @@ pub fn build_batch_transaction(
     }
 
     // Final fee verification
-    let actual_output_total: u64 = tx.outputs.iter().map(|o| o.value).sum();
+    let actual_output_total = tx.outputs.iter().try_fold(0u64, |acc, o| {
+        acc.checked_add(o.value)
+            .ok_or_else(|| SignerError::ParseError("actual output total overflowed u64".into()))
+    })?;
     if total_input < actual_output_total {
         return Err(SignerError::ParseError(format!(
             "insufficient after fee: {} < {}",
@@ -968,5 +1006,52 @@ mod tests {
         raw.extend_from_slice(&0u32.to_le_bytes()); // locktime
 
         assert!(parse_unsigned_tx(&raw).is_err());
+    }
+
+    #[test]
+    fn test_build_batch_transaction_rejects_input_sum_overflow() {
+        let utxos = vec![
+            (
+                OutPoint {
+                    txid: [0x11; 32],
+                    vout: 0,
+                },
+                u64::MAX,
+            ),
+            (
+                OutPoint {
+                    txid: [0x22; 32],
+                    vout: 1,
+                },
+                1,
+            ),
+        ];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 1,
+        }];
+        assert!(build_batch_transaction(&utxos, &recipients, &[0x00; 22], 1).is_err());
+    }
+
+    #[test]
+    fn test_build_batch_transaction_rejects_output_sum_overflow() {
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x33; 32],
+                vout: 0,
+            },
+            u64::MAX,
+        )];
+        let recipients = vec![
+            Recipient {
+                script_pubkey: vec![0x00; 22],
+                amount: u64::MAX,
+            },
+            Recipient {
+                script_pubkey: vec![0x00; 22],
+                amount: 1,
+            },
+        ];
+        assert!(build_batch_transaction(&utxos, &recipients, &[0x00; 22], 1).is_err());
     }
 }

@@ -45,13 +45,16 @@ pub fn read_compact_size(data: &[u8], offset: &mut usize) -> Result<u64, SignerE
     match first {
         0x00..=0xFC => Ok(first as u64),
         0xFD => {
-            if *offset + 2 > data.len() {
+            let end = offset.checked_add(2).ok_or_else(|| {
+                SignerError::EncodingError("compact size: u16 offset overflow".into())
+            })?;
+            if end > data.len() {
                 return Err(SignerError::EncodingError(
                     "compact size: truncated u16".into(),
                 ));
             }
             let val = u16::from_le_bytes([data[*offset], data[*offset + 1]]);
-            *offset += 2;
+            *offset = end;
             // Canonical: reject values that fit in single-byte form
             if val < 0xFD {
                 return Err(SignerError::EncodingError(
@@ -61,14 +64,17 @@ pub fn read_compact_size(data: &[u8], offset: &mut usize) -> Result<u64, SignerE
             Ok(val as u64)
         }
         0xFE => {
-            if *offset + 4 > data.len() {
+            let end = offset.checked_add(4).ok_or_else(|| {
+                SignerError::EncodingError("compact size: u32 offset overflow".into())
+            })?;
+            if end > data.len() {
                 return Err(SignerError::EncodingError(
                     "compact size: truncated u32".into(),
                 ));
             }
             let mut buf = [0u8; 4];
-            buf.copy_from_slice(&data[*offset..*offset + 4]);
-            *offset += 4;
+            buf.copy_from_slice(&data[*offset..end]);
+            *offset = end;
             let val = u32::from_le_bytes(buf);
             // Canonical: reject values that fit in 2-byte form
             if val <= 0xFFFF {
@@ -79,14 +85,17 @@ pub fn read_compact_size(data: &[u8], offset: &mut usize) -> Result<u64, SignerE
             Ok(val as u64)
         }
         0xFF => {
-            if *offset + 8 > data.len() {
+            let end = offset.checked_add(8).ok_or_else(|| {
+                SignerError::EncodingError("compact size: u64 offset overflow".into())
+            })?;
+            if end > data.len() {
                 return Err(SignerError::EncodingError(
                     "compact size: truncated u64".into(),
                 ));
             }
             let mut buf = [0u8; 8];
-            buf.copy_from_slice(&data[*offset..*offset + 8]);
-            *offset += 8;
+            buf.copy_from_slice(&data[*offset..end]);
+            *offset = end;
             let val = u64::from_le_bytes(buf);
             // Canonical: reject values that fit in 4-byte form
             if val <= 0xFFFF_FFFF {

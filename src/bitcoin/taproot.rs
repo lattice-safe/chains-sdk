@@ -246,6 +246,9 @@ pub struct ControlBlock {
     pub merkle_path: Vec<[u8; 32]>,
 }
 
+/// Maximum Taproot control block Merkle path depth (BIP-341 consensus limit).
+const MAX_CONTROL_BLOCK_DEPTH: usize = 128;
+
 impl ControlBlock {
     /// Create a control block for a specific leaf in a tree.
     ///
@@ -291,6 +294,9 @@ impl ControlBlock {
         let mut internal_key = [0u8; 32];
         internal_key.copy_from_slice(&data[1..33]);
         let path_count = (data.len() - 33) / 32;
+        if path_count > MAX_CONTROL_BLOCK_DEPTH {
+            return None;
+        }
         let mut merkle_path = Vec::with_capacity(path_count);
         for i in 0..path_count {
             let mut hash = [0u8; 32];
@@ -309,6 +315,11 @@ impl ControlBlock {
     /// Reconstructs the merkle root from the proof path and verifies
     /// that `taproot_tweak(internal_key, merkle_root) == output_key`.
     pub fn verify(&self, output_key: &[u8; 32], leaf: &TapLeaf) -> bool {
+        let control_leaf_version = self.leaf_version_and_parity & 0xFE;
+        if control_leaf_version != (leaf.version & 0xFE) {
+            return false;
+        }
+
         // Start with the leaf hash
         let mut current = leaf.leaf_hash();
 
@@ -527,6 +538,11 @@ mod tests {
         assert!(cb.verify(&output_key, &l1));
         // Verify with wrong leaf should fail
         assert!(!cb.verify(&output_key, &l2));
+
+        // Control-byte leaf version must match the provided leaf version.
+        let mut bad_cb = cb.clone();
+        bad_cb.leaf_version_and_parity ^= 0x02; // flip a leaf-version bit
+        assert!(!bad_cb.verify(&output_key, &l1));
     }
 
     #[test]
@@ -535,6 +551,8 @@ mod tests {
         assert!(ControlBlock::from_bytes(&[0x00; 10]).is_none());
         // Wrong alignment
         assert!(ControlBlock::from_bytes(&[0x00; 34]).is_none());
+        // Too deep (BIP-341 max depth is 128)
+        assert!(ControlBlock::from_bytes(&vec![0x00; 33 + 32 * 129]).is_none());
         // Valid: 33 bytes (no proof)
         assert!(ControlBlock::from_bytes(&[0x00; 33]).is_some());
         // Valid: 65 bytes (1 proof hash)
