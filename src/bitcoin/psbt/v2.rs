@@ -430,6 +430,7 @@ impl PsbtV2 {
         let mut input_count: Option<usize> = None;
         let mut output_count: Option<usize> = None;
         let mut found_version = false;
+        let mut found_tx_version = false;
         let mut found_global_terminator = false;
         let mut seen_global_keys: HashSet<Vec<u8>> = HashSet::new();
 
@@ -473,6 +474,7 @@ impl PsbtV2 {
                             ));
                         }
                         psbt.tx_version = u32::from_le_bytes([val[0], val[1], val[2], val[3]]);
+                        found_tx_version = true;
                     }
                     global_key::FALLBACK_LOCKTIME => {
                         if val.len() != 4 {
@@ -514,6 +516,9 @@ impl PsbtV2 {
 
         if !found_version {
             return Err(SignerError::ParseError("missing PSBT version".into()));
+        }
+        if !found_tx_version {
+            return Err(SignerError::ParseError("missing tx version".into()));
         }
 
         let n_inputs =
@@ -1268,6 +1273,24 @@ mod tests {
         write_kv(&mut data, &[global_key::INPUT_COUNT], &compact_size(0));
         write_kv(&mut data, &[global_key::OUTPUT_COUNT], &compact_size(0));
         write_kv(&mut data, &[global_key::TX_MODIFIABLE], &[0x01, 0x02]); // invalid length
+        data.push(0x00); // end global map
+
+        let result = PsbtV2::deserialize(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_missing_tx_version() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"psbt\xFF");
+        write_kv(&mut data, &[global_key::VERSION], &2u32.to_le_bytes());
+        write_kv(
+            &mut data,
+            &[global_key::FALLBACK_LOCKTIME],
+            &0u32.to_le_bytes(),
+        );
+        write_kv(&mut data, &[global_key::INPUT_COUNT], &compact_size(0));
+        write_kv(&mut data, &[global_key::OUTPUT_COUNT], &compact_size(0));
         data.push(0x00); // end global map
 
         let result = PsbtV2::deserialize(&data);

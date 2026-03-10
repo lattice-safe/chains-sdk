@@ -13,6 +13,7 @@
 
 use crate::crypto;
 use crate::encoding;
+use crate::error::SignerError;
 use crate::traits::Signer;
 
 /// BIP-322 tagged hash tag for message hashing.
@@ -89,6 +90,9 @@ pub fn create_to_spend_tx(script_pubkey: &[u8], message: &[u8]) -> Vec<u8> {
 /// - 1 output: value = 0, scriptPubKey = OP_RETURN
 ///
 /// The witness is left empty (to be filled by the signer).
+///
+/// `to_spend_txid` must be in standard transaction serialization byte order
+/// (the order used inside outpoints).
 pub fn create_to_sign_tx(to_spend_txid: &[u8; 32]) -> Vec<u8> {
     let mut tx = Vec::new();
 
@@ -132,12 +136,12 @@ pub fn create_to_sign_tx(to_spend_txid: &[u8; 32]) -> Vec<u8> {
     tx
 }
 
-/// Compute the txid (double SHA256, reversed) of a raw transaction.
+/// Compute the txid (double SHA256) of a raw transaction.
+///
+/// Returns the 32-byte hash in standard transaction serialization byte order
+/// (not display-reversed hex order).
 pub fn compute_txid(raw_tx: &[u8]) -> [u8; 32] {
-    let mut txid = crypto::double_sha256(raw_tx);
-    // txid is displayed reversed (little-endian)
-    txid.reverse();
-    txid
+    crypto::double_sha256(raw_tx)
 }
 
 /// Create a P2WPKH scriptPubKey from a 20-byte pubkey hash.
@@ -162,6 +166,49 @@ pub fn p2tr_script_pubkey(x_only_pubkey: &[u8; 32]) -> Vec<u8> {
     script
 }
 
+/// Serialize a witness stack using Bitcoin consensus vector encoding.
+fn encode_witness_stack(stack: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    encoding::encode_compact_size(&mut out, stack.len() as u64);
+    for item in stack {
+        encoding::encode_compact_size(&mut out, item.len() as u64);
+        out.extend_from_slice(item);
+    }
+    out
+}
+
+/// Parse a consensus-encoded witness stack.
+fn decode_witness_stack(data: &[u8]) -> Result<Vec<Vec<u8>>, SignerError> {
+    let mut offset = 0usize;
+    let item_count_u64 = encoding::read_compact_size(data, &mut offset)?;
+    let item_count = usize::try_from(item_count_u64)
+        .map_err(|_| SignerError::ParseError("witness item count exceeds platform usize".into()))?;
+    let mut stack = Vec::with_capacity(item_count);
+
+    for _ in 0..item_count {
+        let item_len_u64 = encoding::read_compact_size(data, &mut offset)?;
+        let item_len = usize::try_from(item_len_u64).map_err(|_| {
+            SignerError::ParseError("witness item length exceeds platform usize".into())
+        })?;
+        let end = offset
+            .checked_add(item_len)
+            .ok_or_else(|| SignerError::ParseError("witness item length overflow".into()))?;
+        if end > data.len() {
+            return Err(SignerError::ParseError("truncated witness item".into()));
+        }
+        stack.push(data[offset..end].to_vec());
+        offset = end;
+    }
+
+    if offset != data.len() {
+        return Err(SignerError::ParseError(
+            "witness stack has trailing bytes".into(),
+        ));
+    }
+
+    Ok(stack)
+}
+
 // ─── BIP-322 Simple Signing ────────────────────────────────────────
 
 /// BIP-322 "simple" message signing for P2WPKH addresses.
@@ -171,9 +218,9 @@ pub fn p2tr_script_pubkey(x_only_pubkey: &[u8; 32]) -> Vec<u8> {
 /// 2. Compute its txid
 /// 3. Build `to_sign` virtual transaction spending `to_spend`
 /// 4. Compute the BIP-143 sighash for the `to_sign` input
-/// 5. Sign with ECDSA and return the witness-serialized `to_sign` tx
+/// 5. Sign with ECDSA and return the BIP-322 "simple" witness stack bytes
 ///
-/// Returns the serialized `to_sign` transaction with witness data.
+/// Returns the consensus-encoded witness stack (`vector<vector<u8>>`).
 pub fn sign_simple_p2wpkh(
     signer: &super::BitcoinSigner,
     message: &[u8],
@@ -193,11 +240,9 @@ pub fn sign_simple_p2wpkh(
     use super::transaction::*;
 
     let mut tx = Transaction::new(0);
-    let mut txid_internal = to_spend_txid;
-    txid_internal.reverse(); // convert from display order back to internal
     tx.inputs.push(TxIn {
         previous_output: OutPoint {
-            txid: txid_internal,
+            txid: to_spend_txid,
             vout: 0,
         },
         script_sig: vec![],
@@ -222,16 +267,15 @@ pub fn sign_simple_p2wpkh(
     sig_bytes.push(SighashType::All.to_byte()); // append sighash flag
 
     // Build witness: [signature, pubkey]
-    tx.witnesses.push(vec![sig_bytes, pubkey.to_vec()]);
-
-    Ok(tx.serialize_witness())
+    let witness_stack = vec![sig_bytes, pubkey.to_vec()];
+    Ok(encode_witness_stack(&witness_stack))
 }
 
 /// BIP-322 "simple" message signing for P2TR (Taproot) addresses.
 ///
 /// Uses Schnorr key-path signing with BIP-341 sighash.
 ///
-/// Returns the serialized `to_sign` transaction with witness data.
+/// Returns the consensus-encoded witness stack (`vector<vector<u8>>`).
 pub fn sign_simple_p2tr(
     signer: &super::schnorr::SchnorrSigner,
     message: &[u8],
@@ -250,11 +294,9 @@ pub fn sign_simple_p2tr(
     use super::transaction::*;
 
     let mut tx = Transaction::new(0);
-    let mut txid_internal = to_spend_txid;
-    txid_internal.reverse();
     tx.inputs.push(TxIn {
         previous_output: OutPoint {
-            txid: txid_internal,
+            txid: to_spend_txid,
             vout: 0,
         },
         script_sig: vec![],
@@ -277,9 +319,8 @@ pub fn sign_simple_p2tr(
     let sig = signer.sign(&sighash_value)?;
 
     // Taproot witness: [schnorr_signature] (no sighash byte for Default)
-    tx.witnesses.push(vec![sig.bytes.to_vec()]);
-
-    Ok(tx.serialize_witness())
+    let witness_stack = vec![sig.bytes.to_vec()];
+    Ok(encode_witness_stack(&witness_stack))
 }
 
 // ─── BIP-322 Simple Verification ──────────────────────────────────
@@ -295,15 +336,44 @@ pub fn sign_simple_p2tr(
 /// # Arguments
 /// - `pubkey` — Compressed public key (33 bytes)
 /// - `message` — The original signed message
-/// - `signature` — DER-encoded ECDSA signature (without sighash byte)
+/// - `proof` — BIP-322 simple signature bytes (consensus-encoded witness stack)
 pub fn verify_simple_p2wpkh(
     pubkey: &[u8; 33],
     message: &[u8],
-    signature: &[u8],
+    proof: &[u8],
 ) -> Result<bool, crate::error::SignerError> {
     use super::sighash;
     use super::tapscript::SighashType;
     use super::transaction::*;
+
+    let witness_stack = decode_witness_stack(proof)?;
+    if witness_stack.len() != 2 {
+        return Err(SignerError::ParseError(format!(
+            "invalid P2WPKH simple signature witness item count: {}",
+            witness_stack.len()
+        )));
+    }
+
+    if witness_stack[1] != pubkey {
+        return Err(SignerError::ParseError(
+            "witness pubkey does not match provided pubkey".into(),
+        ));
+    }
+
+    let sig_with_hashtype = &witness_stack[0];
+    if sig_with_hashtype.is_empty() {
+        return Err(SignerError::ParseError("empty ECDSA signature".into()));
+    }
+    let (&sighash_byte, der_sig) = sig_with_hashtype
+        .split_last()
+        .ok_or_else(|| SignerError::ParseError("empty ECDSA signature".into()))?;
+    let sighash_type = SighashType::from_byte(sighash_byte)
+        .ok_or_else(|| SignerError::ParseError("invalid sighash type in witness".into()))?;
+    if sighash_type == SighashType::Default {
+        return Err(SignerError::ParseError(
+            "SIGHASH_DEFAULT is invalid for SegWit v0 signatures".into(),
+        ));
+    }
 
     let pubkey_hash = crypto::hash160(pubkey);
     let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
@@ -314,11 +384,9 @@ pub fn verify_simple_p2wpkh(
 
     // Rebuild to_sign tx
     let mut tx = Transaction::new(0);
-    let mut txid_internal = to_spend_txid;
-    txid_internal.reverse();
     tx.inputs.push(TxIn {
         previous_output: OutPoint {
-            txid: txid_internal,
+            txid: to_spend_txid,
             vout: 0,
         },
         script_sig: vec![],
@@ -335,14 +403,14 @@ pub fn verify_simple_p2wpkh(
         script_code,
         value: 0,
     };
-    let sighash_value = sighash::segwit_v0_sighash(&tx, 0, &prev_out, SighashType::All)?;
+    let sighash_value = sighash::segwit_v0_sighash(&tx, 0, &prev_out, sighash_type)?;
 
     // Verify the ECDSA signature
     let verifier = super::BitcoinVerifier::from_public_key_bytes(pubkey)?;
     use crate::traits::Verifier;
     verifier.verify_prehashed(
         &sighash_value,
-        &super::BitcoinSignature::from_bytes(signature)?,
+        &super::BitcoinSignature::from_bytes(der_sig)?,
     )
 }
 
@@ -357,15 +425,48 @@ pub fn verify_simple_p2wpkh(
 /// # Arguments
 /// - `x_only_pubkey` — 32-byte x-only public key
 /// - `message` — The original signed message
-/// - `signature` — 64-byte BIP-340 Schnorr signature
+/// - `proof` — BIP-322 simple signature bytes (consensus-encoded witness stack)
 pub fn verify_simple_p2tr(
     x_only_pubkey: &[u8; 32],
     message: &[u8],
-    signature: &[u8; 64],
+    proof: &[u8],
 ) -> Result<bool, crate::error::SignerError> {
     use super::sighash;
     use super::tapscript::SighashType;
     use super::transaction::*;
+
+    let witness_stack = decode_witness_stack(proof)?;
+    if witness_stack.len() != 1 {
+        return Err(SignerError::ParseError(format!(
+            "invalid P2TR simple signature witness item count: {}",
+            witness_stack.len()
+        )));
+    }
+
+    let sig_item = &witness_stack[0];
+    let (sig_bytes, sighash_type) = match sig_item.len() {
+        64 => (sig_item.as_slice(), SighashType::Default),
+        65 => {
+            let sighash_byte = sig_item[64];
+            if sighash_byte == SighashType::Default.to_byte() {
+                return Err(SignerError::ParseError(
+                    "taproot signature must omit SIGHASH_DEFAULT byte".into(),
+                ));
+            }
+            let parsed = SighashType::from_byte(sighash_byte)
+                .ok_or_else(|| SignerError::ParseError("invalid sighash type in witness".into()))?;
+            (&sig_item[..64], parsed)
+        }
+        _ => {
+            return Err(SignerError::ParseError(format!(
+                "invalid taproot signature length: {}",
+                sig_item.len()
+            )))
+        }
+    };
+
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(sig_bytes);
 
     let script_pk = p2tr_script_pubkey(x_only_pubkey);
 
@@ -375,11 +476,9 @@ pub fn verify_simple_p2tr(
 
     // Rebuild to_sign tx
     let mut tx = Transaction::new(0);
-    let mut txid_internal = to_spend_txid;
-    txid_internal.reverse();
     tx.inputs.push(TxIn {
         previous_output: OutPoint {
-            txid: txid_internal,
+            txid: to_spend_txid,
             vout: 0,
         },
         script_sig: vec![],
@@ -395,11 +494,11 @@ pub fn verify_simple_p2tr(
         value: 0,
         script_pubkey: script_pk,
     }];
-    let sighash_value = sighash::taproot_key_path_sighash(&tx, 0, &prevouts, SighashType::Default)?;
+    let sighash_value = sighash::taproot_key_path_sighash(&tx, 0, &prevouts, sighash_type)?;
 
     // Verify the Schnorr signature
     let verifier = super::schnorr::SchnorrVerifier::from_public_key_bytes(x_only_pubkey)?;
-    let schnorr_sig = super::schnorr::SchnorrSignature { bytes: *signature };
+    let schnorr_sig = super::schnorr::SchnorrSignature { bytes: signature };
     use crate::traits::Verifier;
     verifier.verify(&sighash_value, &schnorr_sig)
 }
@@ -484,6 +583,14 @@ mod tests {
     }
 
     #[test]
+    fn test_bip322_witness_stack_roundtrip() {
+        let stack = vec![vec![0xAA, 0xBB], vec![0x01], vec![]];
+        let encoded = encode_witness_stack(&stack);
+        let decoded = decode_witness_stack(&encoded).unwrap();
+        assert_eq!(decoded, stack);
+    }
+
+    #[test]
     fn test_bip322_p2wpkh_script_pubkey() {
         let hash = [0xAA; 20];
         let script = p2wpkh_script_pubkey(&hash);
@@ -535,7 +642,7 @@ mod tests {
 
     #[test]
     fn test_bip322_sign_verify_p2wpkh_roundtrip() {
-        use crate::traits::{KeyPair, Signer};
+        use crate::traits::KeyPair;
         let signer = super::super::BitcoinSigner::generate().unwrap();
         let message = b"BIP-322 P2WPKH test";
 
@@ -543,101 +650,71 @@ mod tests {
         let proof = sign_simple_p2wpkh(&signer, message).unwrap();
         assert!(!proof.is_empty());
 
-        // Extract signature from the proof (witness-serialized to_sign tx)
-        // The signature is in the witness: [sig+sighash_byte, pubkey]
         let pubkey_bytes = signer.public_key_bytes();
         let mut pubkey33 = [0u8; 33];
         pubkey33.copy_from_slice(&pubkey_bytes);
 
-        // Sign again to get the raw sig for verification
-        let sig = {
-            let pubkey_hash = crypto::hash160(&pubkey33);
-            let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
-            let to_spend = create_to_spend_tx(&script_pk, message);
-            let to_spend_txid = compute_txid(&to_spend);
-            let mut tx = super::super::transaction::Transaction::new(0);
-            let mut txid_internal = to_spend_txid;
-            txid_internal.reverse();
-            tx.inputs.push(super::super::transaction::TxIn {
-                previous_output: super::super::transaction::OutPoint {
-                    txid: txid_internal,
-                    vout: 0,
-                },
-                script_sig: vec![],
-                sequence: 0,
-            });
-            tx.outputs.push(super::super::transaction::TxOut {
-                value: 0,
-                script_pubkey: vec![0x6a],
-            });
-            let sc = super::super::sighash::p2wpkh_script_code(&pubkey_hash);
-            let prev = super::super::sighash::PrevOut {
-                script_code: sc,
-                value: 0,
-            };
-            let sh = super::super::sighash::segwit_v0_sighash(
-                &tx,
-                0,
-                &prev,
-                super::super::tapscript::SighashType::All,
-            )
-            .unwrap();
-            signer.sign_prehashed(&sh).unwrap()
-        };
-
         // Verify
-        let result = verify_simple_p2wpkh(&pubkey33, message, &sig.to_bytes());
+        let result = verify_simple_p2wpkh(&pubkey33, message, &proof);
         assert!(result.is_ok());
         assert!(result.unwrap());
     }
 
     #[test]
     fn test_bip322_verify_p2wpkh_wrong_message() {
-        use crate::traits::{KeyPair, Signer};
+        use crate::traits::KeyPair;
         let signer = super::super::BitcoinSigner::generate().unwrap();
         let pubkey_bytes = signer.public_key_bytes();
         let mut pubkey33 = [0u8; 33];
         pubkey33.copy_from_slice(&pubkey_bytes);
 
-        // Sign message A
-        let pubkey_hash = crypto::hash160(&pubkey33);
-        let script_pk = p2wpkh_script_pubkey(&pubkey_hash);
-        let to_spend = create_to_spend_tx(&script_pk, b"message A");
-        let to_spend_txid = compute_txid(&to_spend);
-        let mut tx = super::super::transaction::Transaction::new(0);
-        let mut txid_internal = to_spend_txid;
-        txid_internal.reverse();
-        tx.inputs.push(super::super::transaction::TxIn {
-            previous_output: super::super::transaction::OutPoint {
-                txid: txid_internal,
-                vout: 0,
-            },
-            script_sig: vec![],
-            sequence: 0,
-        });
-        tx.outputs.push(super::super::transaction::TxOut {
-            value: 0,
-            script_pubkey: vec![0x6a],
-        });
-        let sc = super::super::sighash::p2wpkh_script_code(&pubkey_hash);
-        let prev = super::super::sighash::PrevOut {
-            script_code: sc,
-            value: 0,
-        };
-        let sh = super::super::sighash::segwit_v0_sighash(
-            &tx,
-            0,
-            &prev,
-            super::super::tapscript::SighashType::All,
-        )
-        .unwrap();
-        let sig = signer.sign_prehashed(&sh).unwrap();
+        let proof = sign_simple_p2wpkh(&signer, b"message A").unwrap();
 
         // Verify against message B — should fail
-        let result = verify_simple_p2wpkh(&pubkey33, b"message B", &sig.to_bytes());
+        let result = verify_simple_p2wpkh(&pubkey33, b"message B", &proof);
         // Should either be Ok(false) or Err
         if let Ok(valid) = result {
             assert!(!valid, "wrong message should not verify");
         }
+    }
+
+    #[test]
+    fn test_bip322_sign_verify_p2tr_roundtrip() {
+        use crate::traits::KeyPair;
+        let signer = super::super::schnorr::SchnorrSigner::generate().unwrap();
+        let message = b"BIP-322 P2TR test";
+
+        let proof = sign_simple_p2tr(&signer, message).unwrap();
+        assert!(!proof.is_empty());
+
+        let pubkey_bytes = signer.public_key_bytes();
+        let mut x_only = [0u8; 32];
+        x_only.copy_from_slice(&pubkey_bytes);
+
+        let result = verify_simple_p2tr(&x_only, message, &proof);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_bip322_verify_p2tr_wrong_message() {
+        use crate::traits::KeyPair;
+        let signer = super::super::schnorr::SchnorrSigner::generate().unwrap();
+        let proof = sign_simple_p2tr(&signer, b"message A").unwrap();
+        let mut x_only = [0u8; 32];
+        x_only.copy_from_slice(&signer.public_key_bytes());
+
+        let result = verify_simple_p2tr(&x_only, b"message B", &proof);
+        if let Ok(valid) = result {
+            assert!(!valid, "wrong message should not verify");
+        }
+    }
+
+    #[test]
+    fn test_bip322_verify_rejects_malformed_witness() {
+        let mut x_only = [0u8; 32];
+        x_only.copy_from_slice(&[0x11; 32]);
+        assert!(verify_simple_p2tr(&x_only, b"m", &[0x02, 0x01, 0xAA]).is_err());
+        assert!(verify_simple_p2wpkh(&[0x02; 33], b"m", &[0x02, 0x01, 0xAA]).is_err());
     }
 }

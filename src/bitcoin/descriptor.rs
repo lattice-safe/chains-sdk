@@ -173,19 +173,33 @@ impl Descriptor {
                         xonly
                     }
                 };
+                let (output_key, _parity) = super::taproot::taproot_tweak(&xonly, None)?;
                 // OP_1 OP_PUSH32 <x_only_key>
                 let mut script = Vec::with_capacity(34);
                 script.push(0x51); // OP_1
                 script.push(0x20); // OP_PUSH32
-                script.extend_from_slice(&xonly);
+                script.extend_from_slice(&output_key);
                 Ok(script)
             }
             Descriptor::Raw(script) => Ok(script.clone()),
             Descriptor::OpReturn(data) => {
-                let mut script = Vec::with_capacity(2 + data.len());
+                let mut script = Vec::with_capacity(6 + data.len());
                 script.push(0x6a); // OP_RETURN
                 if data.len() <= 75 {
                     script.push(data.len() as u8);
+                } else if data.len() <= 0xFF {
+                    script.push(0x4c); // OP_PUSHDATA1
+                    script.push(data.len() as u8);
+                } else if data.len() <= 0xFFFF {
+                    script.push(0x4d); // OP_PUSHDATA2
+                    script.extend_from_slice(&(data.len() as u16).to_le_bytes());
+                } else if data.len() <= 0xFFFF_FFFF {
+                    script.push(0x4e); // OP_PUSHDATA4
+                    script.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                } else {
+                    return Err(SignerError::EncodingError(
+                        "op_return data length exceeds script push limit".into(),
+                    ));
                 }
                 script.extend_from_slice(data);
                 Ok(script)
@@ -232,7 +246,8 @@ impl Descriptor {
                         xo
                     }
                 };
-                encoding::bech32_encode(hrp, 1, &xonly)
+                let (output_key, _parity) = super::taproot::taproot_tweak(&xonly, None)?;
+                encoding::bech32_encode(hrp, 1, &output_key)
             }
             Descriptor::Raw(_) | Descriptor::OpReturn(_) => Err(SignerError::EncodingError(
                 "raw/op_return descriptors have no address".into(),
@@ -272,9 +287,20 @@ impl Descriptor {
 ///
 /// Supports `pkh(KEY)`, `wpkh(KEY)`, `sh(wpkh(KEY))`, `tr(KEY)`.
 pub fn parse(descriptor: &str) -> Result<Descriptor, SignerError> {
-    // Strip checksum
-    let desc = if let Some(pos) = descriptor.find('#') {
-        &descriptor[..pos]
+    // Verify checksum when provided (split on the final '#').
+    let desc = if let Some((payload, checksum)) = descriptor.rsplit_once('#') {
+        if checksum.len() != 8 {
+            return Err(SignerError::ParseError(
+                "invalid descriptor checksum length".into(),
+            ));
+        }
+        let expected = descriptor_checksum(payload);
+        if checksum != expected {
+            return Err(SignerError::ParseError(
+                "invalid descriptor checksum".into(),
+            ));
+        }
+        payload
     } else {
         descriptor
     };
@@ -468,6 +494,20 @@ mod tests {
     }
 
     #[test]
+    fn test_descriptor_tr_script_pubkey_uses_tweaked_output_key() {
+        let xonly = [
+            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87,
+            0x0B, 0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81, 0x5B,
+            0x16, 0xF8, 0x17, 0x98,
+        ];
+        let desc = Descriptor::tr(DescriptorKey::XOnly(xonly));
+        let script = desc.script_pubkey().expect("ok");
+        let (tweaked, _) = crate::bitcoin::taproot::taproot_tweak(&xonly, None).expect("tweak");
+        assert_eq!(&script[2..], &tweaked);
+        assert_ne!(&script[2..], &xonly);
+    }
+
+    #[test]
     fn test_descriptor_pkh_address_mainnet() {
         let key = test_key();
         let desc = Descriptor::pkh(key);
@@ -503,6 +543,13 @@ mod tests {
         let desc = Descriptor::tr(key);
         let addr = desc.address("bc").expect("ok");
         assert!(addr.starts_with("bc1p"));
+        let xonly = [
+            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87,
+            0x0B, 0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81, 0x5B,
+            0x16, 0xF8, 0x17, 0x98,
+        ];
+        let expected = crate::bitcoin::taproot::taproot_address(&xonly, None, "bc").expect("addr");
+        assert_eq!(addr, expected);
     }
 
     #[test]
@@ -538,9 +585,22 @@ mod tests {
 
     #[test]
     fn test_descriptor_parse_with_checksum() {
-        let desc_str = format!("pkh({TEST_PUBKEY})#something");
+        let payload = format!("pkh({TEST_PUBKEY})");
+        let desc_str = format!("{payload}#{}", descriptor_checksum(&payload));
         let desc = parse(&desc_str).expect("ok");
         assert!(matches!(desc, Descriptor::Pkh(_)));
+    }
+
+    #[test]
+    fn test_descriptor_parse_with_invalid_checksum_fails() {
+        let desc_str = format!("pkh({TEST_PUBKEY})#aaaaaaaa");
+        assert!(parse(&desc_str).is_err());
+    }
+
+    #[test]
+    fn test_descriptor_parse_with_short_checksum_fails() {
+        let desc_str = format!("pkh({TEST_PUBKEY})#abc");
+        assert!(parse(&desc_str).is_err());
     }
 
     #[test]
@@ -593,6 +653,28 @@ mod tests {
         let script = desc.script_pubkey().expect("ok");
         assert_eq!(script[0], 0x6a); // OP_RETURN
         assert!(desc.address("bc").is_err()); // no address for OP_RETURN
+    }
+
+    #[test]
+    fn test_descriptor_op_return_pushdata1() {
+        let data = vec![0xAA; 80];
+        let desc = Descriptor::OpReturn(data.clone());
+        let script = desc.script_pubkey().expect("ok");
+        assert_eq!(script[0], 0x6a); // OP_RETURN
+        assert_eq!(script[1], 0x4c); // OP_PUSHDATA1
+        assert_eq!(script[2], 80);
+        assert_eq!(&script[3..], &data);
+    }
+
+    #[test]
+    fn test_descriptor_op_return_pushdata2() {
+        let data = vec![0x55; 300];
+        let desc = Descriptor::OpReturn(data.clone());
+        let script = desc.script_pubkey().expect("ok");
+        assert_eq!(script[0], 0x6a); // OP_RETURN
+        assert_eq!(script[1], 0x4d); // OP_PUSHDATA2
+        assert_eq!(&script[2..4], &300u16.to_le_bytes());
+        assert_eq!(&script[4..], &data);
     }
 
     #[test]
