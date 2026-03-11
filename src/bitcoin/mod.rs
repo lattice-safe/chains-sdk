@@ -172,7 +172,14 @@ impl BitcoinSigner {
             ));
         }
 
-        // Extract key bytes (skip version byte; compression flag handled by length check)
+        if decoded.len() == 38 && decoded[33] != 0x01 {
+            return Err(SignerError::InvalidPrivateKey(format!(
+                "invalid compressed WIF flag: expected 0x01, got 0x{:02x}",
+                decoded[33]
+            )));
+        }
+
+        // Extract key bytes (skip version byte; optional compression flag is validated above)
         let key_bytes = &decoded[1..33];
 
         Self::from_bytes(key_bytes)
@@ -639,6 +646,18 @@ mod tests {
         let restored = BitcoinSigner::from_wif(&wif).unwrap();
         assert_eq!(&*signer.private_key_bytes(), &*restored.private_key_bytes());
         assert_eq!(signer.p2pkh_address(), restored.p2pkh_address());
+    }
+
+    #[test]
+    fn test_from_wif_rejects_invalid_compression_flag() {
+        let mut payload = vec![0x80];
+        payload.extend_from_slice(&[0x11; 32]);
+        payload.push(0x02); // invalid compressed flag (must be 0x01)
+        let checksum = double_sha256(&payload);
+        payload.extend_from_slice(&checksum[..4]);
+        let bad_wif = bs58::encode(payload).into_string();
+
+        assert!(BitcoinSigner::from_wif(&bad_wif).is_err());
     }
 
     // ─── Address Validation ─────────────────────────────────────

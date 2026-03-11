@@ -183,6 +183,12 @@ fn decode_witness_stack(data: &[u8]) -> Result<Vec<Vec<u8>>, SignerError> {
     let item_count_u64 = encoding::read_compact_size(data, &mut offset)?;
     let item_count = usize::try_from(item_count_u64)
         .map_err(|_| SignerError::ParseError("witness item count exceeds platform usize".into()))?;
+    let max_possible_items = data.len().saturating_sub(offset);
+    if item_count > max_possible_items {
+        return Err(SignerError::ParseError(format!(
+            "witness item count {item_count} exceeds possible maximum {max_possible_items}"
+        )));
+    }
     let mut stack = Vec::with_capacity(item_count);
 
     for _ in 0..item_count {
@@ -666,6 +672,14 @@ mod tests {
         let encoded = encode_witness_stack(&stack);
         let decoded = decode_witness_stack(&encoded).unwrap();
         assert_eq!(decoded, stack);
+    }
+
+    #[test]
+    fn test_bip322_witness_stack_rejects_impossible_item_count() {
+        // item_count = u64::MAX, with no trailing payload
+        let mut encoded = vec![0xFF];
+        encoded.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert!(decode_witness_stack(&encoded).is_err());
     }
 
     #[test]

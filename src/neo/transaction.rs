@@ -13,8 +13,14 @@ use crate::error::SignerError;
 
 /// NeoVM opcode constants.
 pub mod opcode {
-    /// Push zero onto the stack.
-    pub const PUSH0: u8 = 0x00;
+    /// Push an 8-bit integer (followed by 1 data byte).
+    pub const PUSHINT8: u8 = 0x00;
+    /// Push `null` onto the stack.
+    pub const PUSHNULL: u8 = 0x0B;
+    /// Push -1 onto the stack.
+    pub const PUSHM1: u8 = 0x0F;
+    /// Push integer 0 onto the stack.
+    pub const PUSH0: u8 = 0x10;
     /// Push data with 1-byte length prefix.
     pub const PUSHDATA1: u8 = 0x0C;
     /// Push integer 1.
@@ -63,7 +69,7 @@ impl ScriptBuilder {
     /// Push an integer onto the stack.
     pub fn emit_push_integer(&mut self, value: i64) -> &mut Self {
         if value == -1 {
-            self.data.push(0x0F); // PUSHM1
+            self.data.push(opcode::PUSHM1);
         } else if value == 0 {
             self.data.push(opcode::PUSH0);
         } else if (1..=16).contains(&value) {
@@ -188,7 +194,7 @@ pub fn nep17_transfer(
 ) -> Vec<u8> {
     let mut sb = ScriptBuilder::new();
     // Push arguments in reverse order for NeoVM
-    sb.emit(opcode::PUSH0); // data (null for simple transfer)
+    sb.emit(opcode::PUSHNULL); // data (null for simple transfer)
     sb.emit_push_integer(amount);
     sb.emit_push_hash160(to);
     sb.emit_push_hash160(from);
@@ -689,7 +695,7 @@ pub fn neo_vote(voter: &[u8; 20], candidate_pubkey: Option<&[u8; 33]>) -> Vec<u8
     let mut sb = ScriptBuilder::new();
     match candidate_pubkey {
         Some(pk) => sb.emit_push_bytes(pk),
-        None => sb.emit(opcode::PUSH0), // null = cancel vote
+        None => sb.emit(opcode::PUSHNULL), // null = cancel vote
     };
     sb.emit_push_hash160(voter)
         .emit_contract_call(&contracts::NEO_TOKEN, "vote", 2);
@@ -744,6 +750,15 @@ mod tests {
         let mut sb = ScriptBuilder::new();
         sb.emit_push_integer(0);
         assert_eq!(sb.to_bytes(), vec![opcode::PUSH0]);
+    }
+
+    #[test]
+    fn test_neo_n3_opcode_constants() {
+        assert_eq!(opcode::PUSHINT8, 0x00);
+        assert_eq!(opcode::PUSHNULL, 0x0B);
+        assert_eq!(opcode::PUSHM1, 0x0F);
+        assert_eq!(opcode::PUSH0, 0x10);
+        assert_eq!(opcode::PUSH1, 0x11);
     }
 
     #[test]

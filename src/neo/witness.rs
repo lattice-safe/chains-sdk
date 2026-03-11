@@ -254,13 +254,13 @@ fn neo_crypto_checkmultisig_hash() -> [u8; 4] {
 
 /// Push a small integer (0–65535) onto the NeoVM stack.
 ///
-/// - 0 → PUSH0 (0x10 is PUSH1, so 0 uses opcode 0x0F)
+/// - 0 → PUSH0 (0x10)
 /// - 1–16 → PUSH1..PUSH16 (0x11..0x20)
 /// - 17–255 → PUSHINT8 (0x00) + 1-byte value
 /// - 256–65535 → PUSHINT16 (0x01) + 2-byte LE value
 fn push_small_integer(buf: &mut Vec<u8>, value: u16) {
     match value {
-        0 => buf.push(0x0F),                    // PUSH0
+        0 => buf.push(0x10),                    // PUSH0
         1..=16 => buf.push(0x10 + value as u8), // PUSH1..PUSH16
         17..=255 => {
             buf.push(0x00); // PUSHINT8
@@ -415,6 +415,13 @@ mod tests {
         let mut buf = Vec::new();
         write_var_int(&mut buf, 100);
         assert_eq!(buf, vec![100]);
+    }
+
+    #[test]
+    fn test_push_small_integer_zero_uses_push0() {
+        let mut buf = Vec::new();
+        push_small_integer(&mut buf, 0);
+        assert_eq!(buf, vec![0x10]);
     }
 
     #[test]
