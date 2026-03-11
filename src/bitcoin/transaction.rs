@@ -489,18 +489,34 @@ pub fn build_batch_transaction(
         )));
     }
 
-    // Build transaction with change to estimate size
+    let effective_fee_rate = fee_rate_sat_per_vb.max(MIN_RELAY_FEE_SAT_PER_VB);
+    let estimate_fee_for_outputs = |num_outputs: usize| -> Result<u64, SignerError> {
+        let estimated_vsize = u64::try_from(estimate_vsize(utxos.len(), 0, 0, num_outputs))
+            .map_err(|_| SignerError::ParseError("estimated vsize exceeds u64".into()))?;
+        estimated_vsize
+            .checked_mul(effective_fee_rate)
+            .ok_or_else(|| SignerError::ParseError("estimated fee overflowed u64".into()))
+    };
+
+    let available_for_fee = total_input
+        .checked_sub(total_output)
+        .ok_or_else(|| SignerError::ParseError("input/output subtraction underflow".into()))?;
+
+    let estimated_fee_without_change = estimate_fee_for_outputs(recipients.len())?;
+    if available_for_fee < estimated_fee_without_change {
+        return Err(SignerError::ParseError(format!(
+            "insufficient funds for fee: available {}, required {}",
+            available_for_fee, estimated_fee_without_change
+        )));
+    }
+
+    // Estimate fee with change output. If this does not fit, we drop change.
     let num_outputs_with_change = recipients
         .len()
         .checked_add(1)
         .ok_or_else(|| SignerError::ParseError("recipient count overflow".into()))?;
-    let estimated_vsize = estimate_vsize(utxos.len(), 0, 0, num_outputs_with_change);
-    let estimated_fee = (estimated_vsize as u64).saturating_mul(fee_rate_sat_per_vb);
-
-    let change_amount = total_input
-        .checked_sub(total_output)
-        .and_then(|r| r.checked_sub(estimated_fee))
-        .unwrap_or(0);
+    let estimated_fee_with_change = estimate_fee_for_outputs(num_outputs_with_change)?;
+    let change_amount = available_for_fee.saturating_sub(estimated_fee_with_change);
 
     let mut tx = Transaction::new(2);
     tx.locktime = 0;
@@ -535,10 +551,18 @@ pub fn build_batch_transaction(
         acc.checked_add(o.value)
             .ok_or_else(|| SignerError::ParseError("actual output total overflowed u64".into()))
     })?;
-    if total_input < actual_output_total {
+    let required_fee = if tx.outputs.len() == num_outputs_with_change {
+        estimated_fee_with_change
+    } else {
+        estimated_fee_without_change
+    };
+    let required_total = actual_output_total
+        .checked_add(required_fee)
+        .ok_or_else(|| SignerError::ParseError("required total overflowed u64".into()))?;
+    if total_input < required_total {
         return Err(SignerError::ParseError(format!(
-            "insufficient after fee: {} < {}",
-            total_input, actual_output_total
+            "insufficient after fee: inputs {} < outputs {} + fee {}",
+            total_input, actual_output_total, required_fee
         )));
     }
 
@@ -835,6 +859,41 @@ mod tests {
             amount: 100_000,
         }];
         assert!(build_batch_transaction(&utxos, &recipients, &[], 5).is_err());
+    }
+
+    #[test]
+    fn test_batch_build_insufficient_for_fee() {
+        // Inputs cover recipient amount, but not the required fee.
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            1_000,
+        )];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 900,
+        }];
+        assert!(build_batch_transaction(&utxos, &recipients, &[0x00; 22], 1).is_err());
+    }
+
+    #[test]
+    fn test_batch_build_succeeds_without_change_when_fee_covered() {
+        // Covers recipients + no-change fee, but not recipients + change fee.
+        let utxos = vec![(
+            OutPoint {
+                txid: [0x01; 32],
+                vout: 0,
+            },
+            1_050,
+        )];
+        let recipients = vec![Recipient {
+            script_pubkey: vec![0x00; 22],
+            amount: 900,
+        }];
+        let tx = build_batch_transaction(&utxos, &recipients, &[0x00; 22], 1).unwrap();
+        assert_eq!(tx.outputs.len(), 1); // recipient only, no dust-safe change
     }
 
     #[test]

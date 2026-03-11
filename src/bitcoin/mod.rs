@@ -137,7 +137,10 @@ impl BitcoinSigner {
 
     /// Import a private key from **WIF** (Wallet Import Format).
     ///
-    /// Accepts mainnet (`5`/`K`/`L`) and testnet (`9`/`c`) WIF strings.
+    /// Accepts compressed mainnet (`K`/`L`) and testnet (`c`) WIF strings.
+    ///
+    /// Uncompressed WIF (`5...`/`9...`) is rejected to avoid ambiguity with the
+    /// signer's compressed-key address/signing behavior.
     pub fn from_wif(wif: &str) -> Result<Self, SignerError> {
         use crate::traits::KeyPair;
         let decoded = Zeroizing::new(
@@ -146,10 +149,10 @@ impl BitcoinSigner {
                 .map_err(|e| SignerError::InvalidPrivateKey(format!("invalid WIF base58: {e}")))?,
         );
 
-        // Validate length: 37 (uncompressed) or 38 (compressed)
-        if decoded.len() != 37 && decoded.len() != 38 {
+        // Require compressed WIF payload: version(1) + key(32) + flag(1) + checksum(4) = 38.
+        if decoded.len() != 38 {
             return Err(SignerError::InvalidPrivateKey(format!(
-                "WIF must be 37 or 38 bytes, got {}",
+                "WIF must be 38 bytes (compressed format), got {}",
                 decoded.len()
             )));
         }
@@ -179,7 +182,7 @@ impl BitcoinSigner {
             )));
         }
 
-        // Extract key bytes (skip version byte; optional compression flag is validated above)
+        // Extract key bytes (skip version byte; compression flag validated above)
         let key_bytes = &decoded[1..33];
 
         Self::from_bytes(key_bytes)
@@ -658,6 +661,18 @@ mod tests {
         let bad_wif = bs58::encode(payload).into_string();
 
         assert!(BitcoinSigner::from_wif(&bad_wif).is_err());
+    }
+
+    #[test]
+    fn test_from_wif_rejects_uncompressed_payload() {
+        // Uncompressed WIF payload: version + key + checksum (no 0x01 flag).
+        let mut payload = vec![0x80];
+        payload.extend_from_slice(&[0x22; 32]);
+        let checksum = double_sha256(&payload);
+        payload.extend_from_slice(&checksum[..4]);
+        let uncompressed_wif = bs58::encode(payload).into_string();
+
+        assert!(BitcoinSigner::from_wif(&uncompressed_wif).is_err());
     }
 
     // ─── Address Validation ─────────────────────────────────────
